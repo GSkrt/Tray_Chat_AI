@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="images/icon.png" alt="LLM Tray Manager Icon" width="128">
+</p>
+
 # LLM Tray Manager
 
 A lightweight system tray application for Linux to manage local LLM (Large Language Model) servers using **Ollama** and **Docker**.
