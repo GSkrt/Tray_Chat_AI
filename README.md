@@ -28,7 +28,7 @@ Check video below.
 ## Installation
 
 ### Option 1: Install via Debian Package (.deb)
-Check the [Releases](https://github.com/yourusername/llm-tray-manager/releases) page for the latest `.deb` file.
+Check the [Releases](https://github.com/GSkrt/llm-tray-manager/releases) page for the latest `.deb` file.
 
 ```bash
 sudo dpkg -i llm-tray-manager_1.0-1_all.deb
