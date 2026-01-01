@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="images/llm_tray_default.png" alt="LLM Tray Manager Icon" width="228">
+  <img src="images/llm_tray_default.png" alt="LLM Tray Manager Icon" width="250">
 </p>
 
 
