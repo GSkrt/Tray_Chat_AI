@@ -1,0 +1,9 @@
+.venv/ 
+docker-compose.yml
+images/*.xcf
+images/*.svg
+settings.json
+__pycache__/
+.vscode/
+*.egg-info/
+ollama/

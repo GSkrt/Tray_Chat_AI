@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Ollama Manager
+Exec=ollama-manager
+Icon=/usr/share/ollama-manager/images/ollama.png
+Comment=Manage Ollama Docker Containers
+Terminal=false
+Categories=Utility;

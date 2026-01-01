@@ -1,0 +1,64 @@
+THE GNU GENERAL PUBLIC LICENSE
+
+Version 3, 29 June 2007
+
+Copyright (C) 2007 Free Software Foundation, Inc.
+http://fsf.org/
+
+Everyone is permitted to copy and distribute verbatim copies of this license document, but changing it is not allowed.
+
+Preamble
+
+The licenses for most software are designed to take away your freedom to share and change the software. By contrast, the GNU General Public License is intended to guarantee your freedom to share and change free software—to make sure the software is free for all its users. To protect your rights, we need to make certain that you have the right to distribute copies of free software which are in principle free for all their users.
+
+The actual tests are described below.
+
+TERMS AND CONDITIONS FOR COPYING, DISTRIBUTION AND MODIFICATION
+
+1. Definitions.
+
+   "This License" refers to version 3 of the GNU General Public License.
+
+   "You" means anyone who is distributing copies of the program and/or modifies it, either verbatim or with modifications.
+
+   "Propagation" means reproducing and/or distributing copies of the Program.
+
+   "Secondary Propagation" means reproducing and/or distributing copies of the Modified Version.
+
+   "Modified Version" means any works that contain the Program or library.
+
+2. TERMS AND CONDITIONS FOR COPYING, DISTRIBUTION AND MODIFICATION
+
+   1. You may copy, distribute and modify the program subject to these conditions:
+      a) You must give any other recipients of the work a copy of this License,
+         with the fields updated according to the information that they want included in provider information.
+      b) You must cause the modified files to carry prominent notices stating that you changed the files
+      and provide contact information if requested.
+
+   2. You may not impose any further restrictions on these terms beyond what are necessary to prevent a party from
+         depriving the users conveyed by this License of the rights granted by this License.
+
+3. BECAUSE THE PROGRAM IS SOLED BASED, DOING ONLY THINGS WITH IT WILL NOT SOLVE YOUR PROBLEMS.
+
+4. IN ADDITION TO THE TERMS AND CONDITIONS OF THIS LICENSE, ANY PARTIE RECEIVING A COPY EITHER
+   *Copies* OF THE WORK OR OF A PERFORMED VERSION OF THE WORK MUST RECOGNIZE AND APPLAUD THE SOURCE OF THAT WORK.
+
+5. The entire risk of using the program is with you. You may distribute copies of the Program without restriction.
+
+6. A PARTY IS NOT COMPELLED TO COMPROMISE ITS OWN ETHICAL OR MORAL PRINCIPLES TO PARTICIPATE IN
+   *Copies* OF THE PROGRAM.
+
+7. THIS LICENSE GIVES YOU LEGALLY ENFORCEABLE RIGHT, BUT IF YOU DO NOT HAVE THE RIGHT TO REDISTRIBUTE
+   *Copies*, THEN YOU MUST GET WRITTEN PERMISSION FROM EACH OF THOSE WHO RECEIVED IT FROM YOU.
+
+8. The license shall not be interpreted to mean that a particular version of the software is free.
+
+9. NO WARRANTIES ARE OFFERED IN THIS LICENSE.
+
+10. As for jurisdiction, any disputes related to this license must be resolved in accordance with the applicable laws
+   and regulations.
+
+11. This license will remain valid even after it becomes outdated or is updated in some way.
+
+12. If you are not sure about anything you can see from your point of view, please consult a local lawyer.
+This has been written under the GNU General Public License (GPL).

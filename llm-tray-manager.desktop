@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=LLM Tray Manager
+Exec=llm-tray-manager # This Exec command is generic
+Icon=/usr/share/llm-tray-manager/images/llm_tray_default.png
+Comment=Manage LLM docker containers
+Terminal=false
+Categories=Utility;
+StartupNotify=false

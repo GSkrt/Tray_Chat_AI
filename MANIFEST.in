@@ -1,0 +1,2 @@
+include ollama-manager.desktop
+recursive-include images *.png
