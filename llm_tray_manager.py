@@ -15,7 +15,7 @@ from PyQt5.QtCore import QTimer, QProcess # Import QProcess
 import os
 import logging
 import logging.handlers 
-
+import docker
 from docker import DockerClient, errors as docker_errors
 import json
 
@@ -23,7 +23,7 @@ import json
 class LlmTrayManager:
     def __init__(self):
         
-        self.check_timer_interval = 5000  # in milliseconds
+       
         
         # Determine paths for packaging compatibility
         # 1. Base dir for static assets (images) relative to the script location
@@ -68,6 +68,7 @@ class LlmTrayManager:
         self.docker_image_name = settings_json.get('ollama_container_name', 'ollama') # default to 'ollama' if not set
         self.docker_compose_path = settings_json.get('docker_compose_path', None)
         self.selected_ollama_model = settings_json.get('selected_ollama_model', None)
+        self.check_timer_interval = settings_json.get('status_check_interval', 5000) # default to 5000 ms
         self.save_settings(settings_json)
         
         self.docker_client = None
@@ -151,11 +152,19 @@ class LlmTrayManager:
         self.menu.addAction(self.pull_model_action)
         self.menu.addSeparator()
         
+        # New action for removing models
+        self.remove_model_action = QAction("Remove LLM Model")
+        self.remove_model_action.triggered.connect(self.remove_language_model_dialog)
+        self.menu.addAction(self.remove_model_action)
+        self.menu.addSeparator()
         
-        
-        
+        # change timer interval for status check
+        self.change_timer_interval_action =QAction("Set Status Check Interval")
+        self.change_timer_interval_action.triggered.connect(self.change_interval_timer_variable)
+        self.menu.addAction(self.change_timer_interval_action)
         self.menu.addSeparator()
 
+        # if running docker image is not called ollama select ollama from running docker images
         self.choose_running_docker_image_as_ollama = QAction("Choose Running Docker Image for LLM Server")
         self.choose_running_docker_image_as_ollama.triggered.connect(self.choose_from_running_docker_images)
         self.menu.addAction(self.choose_running_docker_image_as_ollama)
@@ -204,6 +213,73 @@ class LlmTrayManager:
                 self.tray.setIcon(QIcon(os.path.join(self.image_dir, "llm_tray_default.png"))) # Fallback to default icon
             self.timer.stop() # No need to check status if Docker is not available
         
+    def change_interval_timer_variable(self): 
+        # show input dialog to change timer interval variable
+        current_int_seconds = self.check_timer_interval // 1000
+        interval, ok = QInputDialog.getInt(None, "Set Status Check Interval", "Enter interval in milliseconds:", current_int_seconds, 1, 60, 1)
+        if ok:
+            self.check_timer_interval = interval*1000 # convert to milliseconds
+            self.timer.setInterval(self.check_timer_interval)
+            self.show_status_message("Interval Updated", f"Status check interval set to {(self.check_timer_interval/1000)} s.")
+            # save to settings
+            settings = self.read_settings()
+            settings['status_check_interval'] = self.check_timer_interval
+            self.save_settings(settings)
+        else:
+            return
+    
+    
+    def remove_language_model_dialog(self):
+        # show dropdown dialog with available ollama models to remove one
+        models_output = self.list_ollama_models()
+        if models_output:
+            models = [line.split()[0] for line in models_output.splitlines() if line]
+            if not models:
+                QMessageBox.information(None, "No Models", "No LLM models found to remove.")
+                return
+
+            item, ok = QInputDialog.getItem(None, "Remove LLM Model", "Select Model to Remove:", models, 0, False)
+            if ok and item:
+                reply = QMessageBox.question(None, "Confirm Removal",
+                                             f"Are you sure you want to remove model '{item}'?",
+                                             QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+                if reply == QMessageBox.Yes:
+                    self.remove_language_model_from_ollama(item)
+                    # Optionally, update the selected model if the removed one was selected
+                    if self.selected_ollama_model == item:
+                        self.selected_ollama_model = None
+                        settings = self.read_settings()
+                        settings['selected_ollama_model'] = None
+                        self.save_settings(settings)
+                        self.choose_ollama_model_action.setText("Select LLM Model")
+                    self.update_status() # Refresh status to reflect changes
+        else:
+            QMessageBox.warning(None, "No Models", "Could not retrieve LLM models to remove.")
+
+    
+    
+    def remove_language_model_from_ollama(self, model_name):
+        try:
+            # Check if the model exists in Ollama
+            client = self.docker_client
+            container = client.containers.get(self.docker_image_name)
+            if container.status == "running":
+                exec_result = container.exec_run(f"ollama remove {model_name}", stdout=True, stderr=True)
+                if exec_result.exit_code == 0:
+                    output = exec_result.output.decode('utf-8')
+                    self.show_status_message("Model Removed", f"Successfully removed model '{model_name}': {output}", 5000)
+                else:
+                    error_output = exec_result.output.decode('utf-8')
+                    logging.error(f"Failed to remove model '{model_name}' in Ollama container: {error_output}")
+                    self.show_status_message("Error", f"Failed to remove model '{model_name}': {error_output}", 5000)
+        except docker.errors.NotFound as e:
+            logging.error(f"Ollama container '{self.docker_image_name}' not found. Cannot remove model '{model_name}'.")
+            self.show_status_message("Error", f"Ollama container '{self.docker_image_name}' not found. Cannot remove model.", 5000)
+        except Exception as e:
+            logging.error(f"An unexpected error occurred while removing model '{model_name}': {e}")
+            self.show_status_message("Error", f"An unexpected error occurred: {e}", 5000)
+    
+    
     def start_chat_from_tray_icon(self, reason):
         if reason == QSystemTrayIcon.Trigger:
             # Check if a modal dialog (like the chat window) is already open

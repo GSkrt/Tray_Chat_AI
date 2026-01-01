@@ -9,10 +9,9 @@ A lightweight system tray application for Linux to manage local LLM (Large Langu
 
 It provides a quick way to check if your LLM server is running, see if it's using CPU or GPU, start/stop the server, and even chat with models directly from your desktop.
 
-Right now program works with ollama docker image. Idea is to start and stop docker image using system tray and quickly get to chat with your locally installed AI model. 
-This is a quick 1 day project durring hollidays so don't expect much for now. 
+Right now program works with ollama docker image. More LLM servers will be added in future.
 
-Check video below.  
+Check video below (inteface was updated).  
 
 ## Demo
 
