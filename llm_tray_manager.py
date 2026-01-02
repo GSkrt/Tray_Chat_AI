@@ -347,8 +347,8 @@ class LlmTrayManager:
             for i in range(active_dialog.layout().count()):
                 item = active_dialog.layout().itemAt(i)
                 widget = item.widget()
-                if isinstance(widget, QLabel) and widget.text().startswith("Selected LLM Model:"):
-                    widget.setText(f"Selected LLM Model: {model_name}")
+                if isinstance(widget, QLabel) and widget.text().startswith("Selected LLM Model(s):"):
+                    widget.setText(f"Selected LLM Model(s): {model_name}")
                     break
         
         # Update the menu text to show the selected model in bold after selection
@@ -397,7 +397,7 @@ class LlmTrayManager:
         
         # add dropdown for model selection at the top of the dialog
         model_selection_layout = QHBoxLayout()
-        model_selection_label = QLabel("Select Model:")
+        model_selection_label = QLabel("Select Model(s):")
         model_selection_label.setFont(font)
         model_selection_layout.addWidget(model_selection_label)
 
@@ -437,7 +437,7 @@ class LlmTrayManager:
         
         
         # label on top to show selected model name 
-        model_label = QLabel(f"Selected LLM Model: {display_model_name}")
+        model_label = QLabel(f"Selected LLM Model(s): {display_model_name}")
         font_label = QtGui.QFont()
         font_label.setPointSize(12)
         font_label.setBold(True)
@@ -449,7 +449,7 @@ class LlmTrayManager:
         
         # Chat Display (History)
         chat_display = QListWidget()
-        chat_display.setStyleSheet("QListWidget { background-color: #ECE5DD; border: 1px solid #0d5c7a; border-radius: 10px; padding: 10px; }")
+        chat_display.setStyleSheet("QListWidget { background-color: #ECE5DD; border: 0.5px solid #0d5c7a; border-radius: 10px; padding: 10px; }")
         chat_display.setSelectionMode(QAbstractItemView.NoSelection)
         chat_display.setVerticalScrollMode(QAbstractItemView.ScrollPerPixel)
         
@@ -474,10 +474,10 @@ class LlmTrayManager:
         
         # Input Area
         prompt_input = QTextEdit()
-        prompt_input.setStyleSheet("QTextEdit { background-color: #FFFFFF; border: 1px solid #0d5c7a; border-radius: 10px; padding: 10px; }")
+        prompt_input.setStyleSheet("QTextEdit { background-color: #FFFFFF; border: 0.5px solid #0d5c7a; border-radius: 10px; padding: 10px; }")
         prompt_input.setFont(font)
         prompt_input.setMaximumHeight(100)
-        prompt_input.setPlaceholderText("Type your message here... (Press Enter to send)")
+        prompt_input.setPlaceholderText("Type your message here... (Press Enter to send), use F11 for fullscreen")
         layout.addWidget(prompt_input)
 
         # Buttons Layout
@@ -485,10 +485,10 @@ class LlmTrayManager:
         buttons_layout.setSpacing(10)
         
         clear_button = QPushButton("Clear Chat History")
-        clear_button.setStyleSheet("QPushButton { background-color: #546e7a; color: white; padding: 10px; border: 2px solid #0d5c7a; border-radius: 10px; } QPushButton:hover { background-color: #455a64; }")
+        clear_button.setStyleSheet("QPushButton { font-size:14px; font-weight:bold; background-color: #546e7a; color: white; padding: 10px; border: 1px solid #0d5c7a; border-radius: 10px; } QPushButton:hover { background-color: #455a64; }")
         clear_button.setMinimumHeight(50)
         send_button = QPushButton("Ask question (or press Enter to send)")
-        send_button.setStyleSheet("QPushButton { background-color: #63a0c5; color: white; padding: 10px; border: 2px solid #0d5c7a; border-radius: 10px; } QPushButton:hover { background-color: #175a83; }")
+        send_button.setStyleSheet("QPushButton { font-size:14px; font-weight:bold; background-color: #63a0c5; color: white; padding: 10px; border: 1px solid #0d5c7a; border-radius: 10px; } QPushButton:hover { background-color: #175a83; }")
         send_button.setMinimumHeight(50)
         
         buttons_layout.addWidget(clear_button)
@@ -758,7 +758,7 @@ class LlmTrayManager:
                     for i in range(active_dialog.layout().count()):
                         widget = active_dialog.layout().itemAt(i).widget()
                         if isinstance(widget, QLabel):
-                            widget.setText(f"Selected LLM Model: {item}")
+                            widget.setText(f"Selected LLM Model(s): {item}")
                             break
                 
         else:
