@@ -71,8 +71,18 @@ class TrayChatAIManager:
         settings_json = self.read_settings()
         self.docker_image_name = settings_json.get('ollama_container_name', 'ollama') # default to 'ollama' if not set
         self.docker_compose_path = settings_json.get('docker_compose_path', None)
-        self.selected_ollama_model = settings_json.get('selected_ollama_model', None)
+        
+        # Ensure selected_ollama_model is always a list
+        raw_model = settings_json.get('selected_ollama_model', [])
+        if isinstance(raw_model, str):
+            self.selected_ollama_model = [raw_model]
+        elif raw_model is None:
+            self.selected_ollama_model = []
+        else:
+            self.selected_ollama_model = raw_model
+            
         self.check_timer_interval = settings_json.get('status_check_interval', 5000) # default to 5000 ms
+        settings_json['selected_ollama_model'] = self.selected_ollama_model
         self.save_settings(settings_json)
         
         self.docker_client = None
@@ -142,14 +152,7 @@ class TrayChatAIManager:
         self.choose_docker_compose_file_action = QAction("Set Docker Compose File")
         self.choose_docker_compose_file_action.triggered.connect(self.choose_docker_compose_file)
         self.menu.addAction(self.choose_docker_compose_file_action)
-
-        
         self.menu.addSeparator()
-        
-        # add option to select ollama model from available models
-        self.choose_ollama_model_action = QAction("Select LLM Model")
-        self.choose_ollama_model_action.triggered.connect(self.choose_ollama_model)
-        self.menu.addAction(self.choose_ollama_model_action)
         
         # New action for pulling models
         self.pull_model_action = QAction("Pull LLM Model")
@@ -205,7 +208,6 @@ class TrayChatAIManager:
             self.start_action.setEnabled(False)
             self.stop_action.setEnabled(False)
             self.choose_docker_compose_file_action.setEnabled(False)
-            self.choose_ollama_model_action.setEnabled(False)
             self.send_prompt_action.setEnabled(False)
             self.choose_running_docker_image_as_ollama.setEnabled(False)
             self.pull_model_action.setEnabled(False) # Disable pull model action
@@ -251,12 +253,11 @@ class TrayChatAIManager:
                 if reply == QMessageBox.Yes:
                     self.remove_language_model_from_ollama(item)
                     # Optionally, update the selected model if the removed one was selected
-                    if self.selected_ollama_model == item:
-                        self.selected_ollama_model = None
+                    if self.selected_ollama_model and item in self.selected_ollama_model:
+                        self.selected_ollama_model.remove(item)
                         settings = self.read_settings()
-                        settings['selected_ollama_model'] = None
+                        settings['selected_ollama_model'] = self.selected_ollama_model
                         self.save_settings(settings)
-                        self.choose_ollama_model_action.setText("Select LLM Model")
                     self.update_status() # Refresh status to reflect changes
         else:
             QMessageBox.warning(None, "No Models", "Could not retrieve LLM models to remove.")
@@ -321,15 +322,14 @@ class TrayChatAIManager:
             if model.item(i).checkState() == QtCore.Qt.Checked:
                 selected_models.append(model.item(i).text())
         
-        if len(selected_models) == 1:
-            self.selected_ollama_model = selected_models[0]
-        else:
+        # Ensure it is never empty if we have a selection (except on first run logic handled elsewhere)
+        if selected_models:
             self.selected_ollama_model = selected_models
 
-        if isinstance(self.selected_ollama_model, list):
+        if self.selected_ollama_model:
             model_name = ", ".join(self.selected_ollama_model)
         else:
-            model_name = self.selected_ollama_model if self.selected_ollama_model else "No model selected"
+            model_name = "No model selected"
 
         # store selected model in settings to persist between sessions
         settings = self.read_settings()
@@ -340,8 +340,7 @@ class TrayChatAIManager:
         display_name = model_name
         if len(display_name) > 30:
             display_name = display_name[:27] + "..."
-        self.choose_ollama_model_action.setText(f"Select LLM Model (Selected: {display_name})")
-        
+
         # update chat dialog title and displayed label
         active_dialog = QApplication.activeModalWidget()
         
@@ -356,12 +355,6 @@ class TrayChatAIManager:
                     widget.setText(f"Selected LLM Model(s): {model_name}")
                     break
         
-        # Update the menu text to show the selected model in bold after selection
-        if self.selected_ollama_model:
-            self.choose_ollama_model_action.setText(f"Select LLM Model (Selected: {display_name})")
-        else:
-            self.choose_ollama_model_action.setText("Select LLM Model")
-        
         
     def chat_dialog(self):
         # Create a dialog window for sending prompts
@@ -370,10 +363,7 @@ class TrayChatAIManager:
         
         display_model_name = "No model selected"
         if self.selected_ollama_model:
-            if isinstance(self.selected_ollama_model, list):
-                display_model_name = ", ".join(self.selected_ollama_model)
-            else:
-                display_model_name = self.selected_ollama_model
+            display_model_name = ", ".join(self.selected_ollama_model)
         
         dialog.setWindowTitle("Chat with LLM model: " + display_model_name)
         layout = QVBoxLayout()
@@ -422,10 +412,7 @@ class TrayChatAIManager:
                 item.setFlags(QtCore.Qt.ItemIsUserCheckable | QtCore.Qt.ItemIsEnabled)
                 
                 is_checked = False
-                if isinstance(self.selected_ollama_model, list):
-                    if model_name in self.selected_ollama_model:
-                        is_checked = True
-                elif self.selected_ollama_model == model_name:
+                if self.selected_ollama_model and model_name in self.selected_ollama_model:
                     is_checked = True
                 
                 if is_checked:
@@ -654,11 +641,7 @@ class TrayChatAIManager:
                     self.show_status_message("Error", "No LLM model selected. Please select one first.", 5000)
                     return "Error: No model selected. Please select a model."
 
-                models_to_run = []
-                if isinstance(self.selected_ollama_model, list):
-                    models_to_run = self.selected_ollama_model
-                else:
-                    models_to_run = [self.selected_ollama_model]
+                models_to_run = self.selected_ollama_model
                 
                 final_output = ""
                 for model in models_to_run:
@@ -739,21 +722,19 @@ class TrayChatAIManager:
             models = [line.split()[0] for line in models_output.splitlines() if line.strip() and line.split()[0] != "NAME"]
             
             current_index = 0
-            if self.selected_ollama_model and isinstance(self.selected_ollama_model, str) and self.selected_ollama_model in models:
-                current_index = models.index(self.selected_ollama_model)
+            if self.selected_ollama_model and self.selected_ollama_model[0] in models:
+                current_index = models.index(self.selected_ollama_model[0])
             
             item, ok = QInputDialog.getItem(None, "Select Ollama Model", "Available Models:", models, current_index, False) # 0 is default index
             if ok and item:
                 QMessageBox.information(None, "Model Selected", f"You selected: {item}")
-                self.selected_ollama_model = item
+                self.selected_ollama_model = [item]
                 
                 # store selected model in settings to persist between sessions
                 settings = self.read_settings()
                 settings['selected_ollama_model'] = item
                 self.save_settings(settings)
                 
-                # add menu text to show selected model, show it in bold 
-                self.choose_ollama_model_action.setText(f"Select LLM Model (Selected: {item})")
                 
                 # if chat window is open, update its title and label
                 active_dialog = QApplication.activeModalWidget()
@@ -921,7 +902,6 @@ class TrayChatAIManager:
             self.status_action.setText("LLM Server: Docker Not Available")
             self.start_action.setEnabled(False)
             self.stop_action.setEnabled(False)
-            self.choose_ollama_model_action.setEnabled(False)
             self.send_prompt_action.setEnabled(False)
             self.pull_model_action.setEnabled(False) # Disable pull model action
             # Icon already set in __init__
@@ -959,8 +939,6 @@ class TrayChatAIManager:
                 # You could change the icon here too: self.tray.setIcon(QIcon("green.png"))
                 self.start_action.setVisible(False)
                 self.stop_action.setVisible(True)
-                
-                self.choose_ollama_model_action.setEnabled(True)
                 self.send_prompt_action.setEnabled(True)
                 self.pull_model_action.setEnabled(True) # Enable pull model action if container is running
             else:
@@ -976,7 +954,6 @@ class TrayChatAIManager:
                 # disable actions that require running container
                 self.start_action.setEnabled(True)
                 self.stop_action.setEnabled(False) # Cannot stop if not found or not running
-                self.choose_ollama_model_action.setEnabled(False) # Cannot choose model if not running
                 self.send_prompt_action.setEnabled(False) # Cannot send prompt if not running
                 self.pull_model_action.setEnabled(False) # Disable pull model action if container is not running
                 
@@ -985,7 +962,6 @@ class TrayChatAIManager:
             self.status_action.setText("LLM Server: Docker Command Not Found") # This status is generic
             self.start_action.setEnabled(False)
             self.stop_action.setEnabled(False)
-            self.choose_ollama_model_action.setEnabled(False)
             self.send_prompt_action.setEnabled(False)
             self.pull_model_action.setEnabled(False) # Disable pull model action
             self.tray.setIcon(QIcon(os.path.join(self.image_dir, "llm_tray_error.png")))
@@ -998,7 +974,6 @@ class TrayChatAIManager:
             self.stop_action.setVisible(False)
             self.start_action.setEnabled(True)
             self.stop_action.setEnabled(False) # Cannot stop if not found
-            self.choose_ollama_model_action.setEnabled(False)
             self.pull_model_action.setEnabled(False) # Disable pull model action
             self.send_prompt_action.setEnabled(False)
             not_running_icon_path = os.path.join(self.image_dir, "tray_chat_ai_not_running.png")
@@ -1008,7 +983,6 @@ class TrayChatAIManager:
             self.status_action.setText("LLM Server: Docker Daemon Down")
             self.start_action.setEnabled(False)
             self.stop_action.setEnabled(False)
-            self.choose_ollama_model_action.setEnabled(False)
             self.send_prompt_action.setEnabled(False)
             self.pull_model_action.setEnabled(False) # Disable pull model action
             self.tray.setIcon(QIcon(os.path.join(self.image_dir, "llm_tray_error.png")))
@@ -1018,7 +992,6 @@ class TrayChatAIManager:
             self.status_action.setText("LLM Server: Error")
             self.start_action.setEnabled(False)
             self.stop_action.setEnabled(False)
-            self.choose_ollama_model_action.setEnabled(False)
             self.pull_model_action.setEnabled(False) # Disable pull model action
             self.send_prompt_action.setEnabled(False)
             self.tray.setIcon(QIcon(os.path.join(self.image_dir, "llm_tray_error.png"))) # This icon is for error

@@ -87,19 +87,19 @@ https://github.com/user-attachments/assets/4ee96f3e-75c8-4be9-a838-429e1794580b
 
 ## Installation
 
-### Option 1: Install via Debian Package (.deb)
-Check the [Releases](https://github.com/GSkrt/LLM-tray-manager-and-chat/releases) page for the latest `.deb` file.
+### Debian/Ubuntu
+Check the Releases page for the latest `.deb` file.
 
 ```bash
-sudo dpkg -i llm-tray-manager_1.0-1_all.deb
-sudo apt-get install -f  # To fix any missing dependencies
+sudo dpkg -i tray-chat-ai_1.0-1_all.deb
+sudo apt-get install -f
 ```
 
 ### Option 2: Run from Source
 
 1.  Clone the repository:
     ```bash
-    git clone https://github.com/GSkrt/LLM-tray-manager-and-chat.git
+    git clone hhttps://github.com/GSkrt/Tray_Chat_AI.git
     cd llm-tray-manager
     ```
 
@@ -111,7 +111,7 @@ sudo apt-get install -f  # To fix any missing dependencies
 
 3.  Run the application:
     ```bash
-    python3 llm_tray_manager.py
+    python3 tray_chat_ai.py
     ```
 
 ## Usage
