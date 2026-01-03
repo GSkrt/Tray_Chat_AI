@@ -696,7 +696,7 @@ class TrayChatAIManager:
         label = QLabel(final_html)
         label.setWordWrap(True)
         label.setMinimumWidth(label_width) 
-        label.setTextInteractionFlags(QtCore.Qt.TextSelectableByMouse)
+        label.setTextInteractionFlags(QtCore.Qt.TextSelectableByMouse | QtCore.Qt.LinksAccessibleByMouse)
         label.setOpenExternalLinks(True)
         
         if role == "User":

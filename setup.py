@@ -12,6 +12,7 @@ if __name__ == "__main__":
         install_requires=[
             "PyQt5",
             "docker",
+            "markdown"
         ],
         setup_requires=["setuptools"],
         entry_points={
