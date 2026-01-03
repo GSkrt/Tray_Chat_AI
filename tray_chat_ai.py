@@ -8,18 +8,95 @@ import sys
 import subprocess
 import re
 import html # Keep html import as it's used in chat display
+import markdown
 from PyQt5.QtWidgets import QApplication,QComboBox, QSystemTrayIcon, QMenu, QFileDialog, QMessageBox, QInputDialog, \
     QStyle, QAction, QDialog, QVBoxLayout, QTextEdit, QPushButton, QListWidget, \
         QListWidgetItem, QLabel, QHBoxLayout, QWidget, QAbstractItemView, QLineEdit, QShortcut
 from PyQt5 import QtGui, QtCore
 from PyQt5.QtGui import QIcon
-from PyQt5.QtCore import QTimer, QProcess # Import QProcess
+from PyQt5.QtCore import QTimer, QProcess, QThread, pyqtSignal # Import QProcess
 import os
 import logging
 import logging.handlers 
 import docker
 from docker import DockerClient, errors as docker_errors
 import json
+
+# Worker for non-blocking Ollama interactions
+# usage:   
+# self.worker = OllamaWorker(self.docker_client, self.docker_image_name, self.selected_ollama_models, full_prompt, self.docker_available)
+# self.worker.response_ready.connect(lambda result: self.handle_worker_response(result, prompt, chat_display, dialog))
+# self.worker.status_message.connect(self.show_status_message)
+# self.worker.finished.connect(QApplication.restoreOverrideCursor)
+# self.worker.start()
+
+class OllamaWorker(QThread):
+    
+    response_ready = pyqtSignal(str)
+    status_message = pyqtSignal(str, str, int)
+
+    def __init__(self, docker_client, docker_image_name, selected_models, prompt, docker_available):
+        super().__init__()
+        self.docker_client = docker_client
+        self.docker_image_name = docker_image_name
+        self.selected_models = selected_models
+        self.prompt = prompt
+        self.docker_available = docker_available
+
+    def run(self):
+        if not self.docker_available:
+            self.status_message.emit("Error", "Docker is not available. Cannot send prompt.", 5000)
+            self.response_ready.emit("Error: Docker is not available.")
+            return
+        try:
+            ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
+            client = self.docker_client
+            container = client.containers.get(self.docker_image_name)
+            if container.status == "running":
+                if not self.selected_models:
+                    self.status_message.emit("Error", "No LLM model selected. Please select one first.", 5000)
+                    self.response_ready.emit("Error: No model selected. Please select a model.")
+                    return
+
+                models_to_run = self.selected_models
+                
+                final_output = ""
+                for model in models_to_run:
+                    # Use subprocess to pipe input to stdin, avoiding shell quoting issues
+                    cmd = ["docker", "exec", "-i", self.docker_image_name, "ollama", "run", model]
+                    result = subprocess.run(cmd, input=self.prompt, capture_output=True, text=True, check=True) # -i is needed for piping input
+                    output = ansi_escape.sub('', result.stdout)
+                    if len(models_to_run) > 1:
+                        final_output += f"**Model: {model}**\n{output}\n\n"
+                    else:
+                        final_output += output
+                
+                self.response_ready.emit(final_output)
+            else:
+                logging.error("LLM server container (Ollama) is not running.")
+                self.status_message.emit("Error", "LLM server container is not running. Please start it first.", 5000)
+                self.response_ready.emit("Error: LLM server container is not running.")
+        except FileNotFoundError:
+            logging.error("Docker command not found when sending prompt. Is Docker installed and in PATH?")
+            self.status_message.emit("Error", "Docker command not found. Please ensure Docker is installed.", 5000)
+            self.response_ready.emit("Error: Docker command not found.")
+        except docker_errors.NotFound:
+            logging.error(f"LLM server container (Ollama) '{self.docker_image_name}' not found. Cannot send prompt.") 
+            self.status_message.emit("Error", f"LLM server container '{self.docker_image_name}' not found. Please check the container name.", 5000)
+            self.response_ready.emit("Error: LLM server container not found.")
+        except docker_errors.APIError as e:
+            logging.error(f"Docker API error when sending prompt: {e}")
+            self.status_message.emit("Docker Error", f"Failed to send prompt due to Docker API error: {e}", 5000)
+            self.response_ready.emit(f"Error: Docker API error: {e}")
+        except subprocess.CalledProcessError as e:
+            cleaned_stderr = ansi_escape.sub('', e.stderr)
+            logging.error(f"Error executing ollama command in container: {cleaned_stderr}") 
+            self.status_message.emit("LLM Server Command Error", f"Error in LLM server command: {cleaned_stderr}", 5000)
+            self.response_ready.emit(f"Error: LLM server command failed: {cleaned_stderr}")
+        except Exception as e:
+            logging.error(f"An unexpected error occurred when sending prompt: {e}")
+            self.status_message.emit("Error", f"An unexpected error occurred: {e}", 5000)
+            self.response_ready.emit(f"Error: An unexpected error occurred: {e}")
 
 
 class TrayChatAIManager:
@@ -492,10 +569,66 @@ class TrayChatAIManager:
         buttons_layout.setSpacing(10)
         
         clear_button = QPushButton("Clear Chat History")
-        clear_button.setStyleSheet("QPushButton { font-size:14px; font-weight:bold; background-color: #546e7a; color: white; padding: 10px; border: 1px solid #0d5c7a; border-radius: 10px; } QPushButton:hover { background-color: #455a64; }")
+        clear_button_style = """QPushButton {
+                                    background-color: #e0e0e0;
+                                    color: #444;
+                                    border: 1px solid #dcdcdc;
+                                    border-radius: 10px;
+                                    
+                                    /* Light top-left border, dark bottom-right border mimics 3D lighting */
+                                    border-top: 2px solid #ffffff;
+                                    border-left: 2px solid #ffffff;
+                                    border-right: 2px solid #bebebe;
+                                    border-bottom: 2px solid #bebebe;
+                                    
+                                    font-weight: bold;
+                                    padding: 10px 20px;
+                                }
+
+                                
+                                QPushButton:hover {
+                                    background-color: #e8e8e8; 
+                                }
+
+                                /* PRESSED: We invert the borders to make the button look "pushed in" */
+                                QPushButton:pressed {
+                                    background-color: #e0e0e0;
+                                    border-top: 2px solid #bebebe;   /* Dark shadow moves to top */
+                                    border-left: 2px solid #bebebe;
+                                    border-right: 2px solid #ffffff; /* Light highlight moves to bottom */
+                                    border-bottom: 2px solid #ffffff;
+                                }"""
+        clear_button.setStyleSheet(clear_button_style)
         clear_button.setMinimumHeight(50)
         send_button = QPushButton("Ask question (or press Enter to send)")
-        send_button.setStyleSheet("QPushButton { font-size:14px; font-weight:bold; background-color: #63a0c5; color: white; padding: 10px; border: 1px solid #0d5c7a; border-radius: 10px; } QPushButton:hover { background-color: #175a83; }")
+        send_button_style = """QPushButton {
+                                background-color: #63a0c5;
+                                color: white;
+                                border-radius: 10px;
+                                border: none;
+                                
+                                border-top: 2px solid #8ec6e8;   /* Lighter blue */
+                                border-left: 2px solid #8ec6e8;  /* Lighter blue */
+                                border-right: 2px solid #3f7b9e; /* Darker blue */
+                                border-bottom: 2px solid #3f7b9e;/* Darker blue */
+                                
+                                font-weight: bold;
+                                padding: 10px 20px;
+                            }
+
+                            QPushButton:hover {
+                                background-color: #6daccc; /* Slightly lighter base on hover */
+                            }
+
+                            QPushButton:pressed {
+                                background-color: #63a0c5;
+                                /* Invert the borders to make it look "pushed in" */
+                                border-top: 2px solid #3f7b9e;   /* Darker blue */
+                                border-left: 2px solid #3f7b9e;  /* Darker blue */
+                                border-right: 2px solid #8ec6e8; /* Lighter blue */
+                                border-bottom: 2px solid #8ec6e8;/* Lighter blue */
+                            }"""
+        send_button.setStyleSheet(send_button_style)
         send_button.setMinimumHeight(50)
         
         buttons_layout.addWidget(clear_button)
@@ -538,163 +671,102 @@ class TrayChatAIManager:
         settings['chat_window_geometry'] = dialog.saveGeometry().toHex().data().decode()
         self.save_settings(settings)
 
+    def add_chat_bubble(self, text, role, chat_display):
+        item = QListWidgetItem()
+        widget = QWidget()
+        layout = QHBoxLayout()
+        
+        # Convert Markdown to HTML using the markdown library
+        # extensions: 'fenced_code' for code blocks, 'nl2br' for newlines
+        final_html = markdown.markdown(text, extensions=['fenced_code', 'nl2br'])
+        
+        # Style code blocks for dark mode (QLabel rich text support)
+        # We wrap pre blocks in a table to ensure background color renders correctly in Qt
+        final_html = final_html.replace('<pre><code>', '<table border="0" cellpadding="10" bgcolor="#2b2b2b" width="100%"><tr><td><pre style="color: #f8f8f2;">')
+        final_html = final_html.replace('</code></pre>', '</pre></td></tr></table>')
+        
+        
+        # set qlabel width as percentage of chat display width make sure this works on resize too
+        
+        current_width = chat_display.width()
+        if chat_display.viewport().width() > 0:
+            current_width = chat_display.viewport().width()
+        
+        label_width = int((current_width - 50) * 0.9) 
+        label = QLabel(final_html)
+        label.setWordWrap(True)
+        label.setMinimumWidth(label_width) 
+        label.setTextInteractionFlags(QtCore.Qt.TextSelectableByMouse)
+        label.setOpenExternalLinks(True)
+        
+        if role == "User":
+            label.setStyleSheet("background-color: #DCF8C6; color: black; border-radius: 15px; padding: 10px; font-size: 12pt;")
+            # Add stretch before the widget to push it to the right
+            layout.addStretch()
+            layout.addWidget(label)
+        else:
+            label.setStyleSheet("background-color: #FFFFFF; color: black; border-radius: 15px; padding: 10px; font-size: 12pt;")
+            layout.addWidget(label)
+            # Add stretch after the widget to keep it on the left
+            layout.addStretch()
+        
+        layout.setContentsMargins(10, 5, 10, 5)
+        widget.setLayout(layout)
+        widget.adjustSize()
+        item.setSizeHint(widget.sizeHint())
+        chat_display.addItem(item)
+        chat_display.setItemWidget(item, widget)
+        chat_display.scrollToBottom()
+
+    
+    
     def send_prompt_and_show_result(self, prompt_input, chat_display, dialog):
+        # read prompt and regognize links to webpage
+        # use scraping to get text from webpage. Add scraped contents to prompt. 
+        
         prompt = prompt_input.toPlainText().strip()
+        
         if not prompt:
             return
-
-        def add_bubble(text, role):
-            item = QListWidgetItem()
-            widget = QWidget()
-            layout = QHBoxLayout()
-            
-            # Normalize newlines
-            text = text.replace("\r\n", "\n")
-            
-            parts = re.split(r'(```.*?```)', text, flags=re.DOTALL)
-            final_html_parts = []
-            
-            for part in parts:
-                if part.startswith("```") and part.endswith("```"):
-                    content = part[3:-3]
-                    # Remove language identifier if present
-                    match = re.match(r'^\s*([a-zA-Z0-9+\-#]+)\n', content)
-                    if match:
-                        content = content[match.end():]
-                    
-                    escaped_content = html.escape(content, quote=False)
-                    # Use table for background color support in QLabel rich text
-                    code_html = f'<br><table border="0" cellpadding="10" bgcolor="#2b2b2b" width="100%"><tr><td><pre style="color: #f8f8f2;">{escaped_content}</pre></td></tr></table><br>'
-                    final_html_parts.append(code_html)
-                else:
-                    # Heuristic: If Assistant response looks like hard-wrapped text (and not code), unwrap it.
-                    if role == "Assistant" and "```" not in text:
-                        part = part.replace("\n\n", "[[PARAGRAPH]]").replace("\n", " ").replace("[[PARAGRAPH]]", "\n\n")
-                    
-                    escaped_part = html.escape(part, quote=False).replace("\n", "<br>")
-                    if role == "Assistant":
-                        escaped_part = re.sub(r'\*\*(.*?)\*\*', r'<b>\1</b>', escaped_part)
-                    final_html_parts.append(escaped_part)
-            
-            final_html = "".join(final_html_parts)
-            
-            
-            # set qlabel width as percentage of chat display width make sure this works on resize too
-            
-            current_width = chat_display.width()
-            if chat_display.viewport().width() > 0:
-                current_width = chat_display.viewport().width()
-            
-            label_width = int((current_width - 50) * 0.9) 
-            label = QLabel(final_html)
-            label.setWordWrap(True)
-            label.setMinimumWidth(label_width) 
-            label.setTextInteractionFlags(QtCore.Qt.TextSelectableByMouse)
-            label.setOpenExternalLinks(True)
-            
-            if role == "User":
-                label.setStyleSheet("background-color: #DCF8C6; color: black; border-radius: 15px; padding: 10px; font-size: 12pt;")
-                # Add stretch before the widget to push it to the right
-                layout.addStretch()
-                layout.addWidget(label)
-            else:
-                label.setStyleSheet("background-color: #FFFFFF; color: black; border-radius: 15px; padding: 10px; font-size: 12pt;")
-                layout.addWidget(label)
-                # Add stretch after the widget to keep it on the left
-                layout.addStretch()
-            
-            layout.setContentsMargins(10, 5, 10, 5)
-            widget.setLayout(layout)
-            widget.adjustSize()
-            item.setSizeHint(widget.sizeHint())
-            chat_display.addItem(item)
-            chat_display.setItemWidget(item, widget)
-            chat_display.scrollToBottom()
+        prompt_input.setDisabled(True)
 
         # Display User Message
-        add_bubble(prompt, "User")
+        self.add_chat_bubble(prompt, "User", chat_display)
         
         prompt_input.clear()
         QApplication.processEvents()
 
         # Construct Contextual Prompt
         full_prompt = ""
-        for msg in dialog.chat_history:
+        # Limit history to the last 20 messages to avoid exceeding the model's context window
+        # (Default context is often 2048 or 4096 tokens)
+        n_past_messages = 20
+        for msg in dialog.chat_history[-n_past_messages:]:
             full_prompt += f"{msg['role']}: {msg['content']}\n"
         full_prompt += f"User: {prompt}\nAssistant:"
 
         QApplication.setOverrideCursor(QtCore.Qt.WaitCursor)
+        
+        # Start Worker (dont block UI while working)
+        self.worker = OllamaWorker(self.docker_client, self.docker_image_name, self.selected_ollama_models, full_prompt, self.docker_available)
+        self.worker.response_ready.connect(lambda result: self.handle_worker_response(result, prompt, chat_display, dialog, prompt_input))
+        self.worker.status_message.connect(self.show_status_message)
+        self.worker.finished.connect(QApplication.restoreOverrideCursor)
+        self.worker.start()
+
+    def handle_worker_response(self, result, user_prompt, chat_display, dialog, prompt_input):
         try:
-            result = self.send_promt_to_ollama(full_prompt)
-        finally:
-            QApplication.restoreOverrideCursor()
-
-        if result:
-            # Display LLM Response (this is generic)
-            add_bubble(result, "Assistant")
-            
-            # Update History
-            dialog.chat_history.append({"role": "User", "content": prompt})
-            dialog.chat_history.append({"role": "Assistant", "content": result.strip()})
-            
-            return result 
-        else:
-            add_bubble("Error: Failed to get response.", "Assistant")
-            return None
-
-    def send_promt_to_ollama(self, prompt):
-        """Sends a prompt to the LLM server (Ollama container) via docker python package. This method is Ollama-specific."""
-        if not self.docker_available:
-            self.show_status_message("Error", "Docker is not available. Cannot send prompt.", 5000)
-            return "Error: Docker is not available."
-        try:
-            ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
-            client = self.docker_client
-            container = client.containers.get(self.docker_image_name)
-            if container.status == "running":
-                if not self.selected_ollama_models:
-                    self.show_status_message("Error", "No LLM model selected. Please select one first.", 5000)
-                    return "Error: No model selected. Please select a model."
-
-                models_to_run = self.selected_ollama_models
-                
-                final_output = ""
-                for model in models_to_run:
-                    # Use subprocess to pipe input to stdin, avoiding shell quoting issues
-                    cmd = ["docker", "exec", "-i", self.docker_image_name, "ollama", "run", model]
-                    result = subprocess.run(cmd, input=prompt, capture_output=True, text=True, check=True) # -i is needed for piping input
-                    output = ansi_escape.sub('', result.stdout)
-                    if len(models_to_run) > 1:
-                        final_output += f"**Model: {model}**\n{output}\n\n"
-                    else:
-                        final_output += output
-                
-                return final_output
+            prompt_input.setEnabled(True)
+            prompt_input.setFocus()
+            if result:
+                self.add_chat_bubble(result, "Assistant", chat_display)
+                dialog.chat_history.append({"role": "User", "content": user_prompt})
+                dialog.chat_history.append({"role": "Assistant", "content": result.strip()})
             else:
-                logging.error("LLM server container (Ollama) is not running.")
-                self.show_status_message("Error", "LLM server container is not running. Please start it first.", 5000)
-                return "Error: LLM server container is not running."
-        except FileNotFoundError:
-            logging.error("Docker command not found when sending prompt. Is Docker installed and in PATH?")
-            self.show_status_message("Error", "Docker command not found. Please ensure Docker is installed.", 5000)
-            return "Error: Docker command not found."
-        except docker_errors.NotFound:
-            logging.error(f"LLM server container (Ollama) '{self.docker_image_name}' not found. Cannot send prompt.") # This error is Ollama-specific
-            self.show_status_message("Error", f"LLM server container '{self.docker_image_name}' not found. Please check the container name.", 5000)
-            return "Error: LLM server container not found."
-        except docker_errors.APIError as e:
-            logging.error(f"Docker API error when sending prompt: {e}")
-            self.show_status_message("Docker Error", f"Failed to send prompt due to Docker API error: {e}", 5000)
-            return f"Error: Docker API error: {e}"
-        except subprocess.CalledProcessError as e:
-            cleaned_stderr = ansi_escape.sub('', e.stderr)
-            logging.error(f"Error executing ollama command in container: {cleaned_stderr}") # This error is Ollama-specific
-            self.show_status_message("LLM Server Command Error", f"Error in LLM server command: {cleaned_stderr}", 5000)
-            return f"Error: LLM server command failed: {cleaned_stderr}"
-        except Exception as e:
-            logging.error(f"An unexpected error occurred when sending prompt: {e}")
-            self.show_status_message("Error", f"An unexpected error occurred: {e}", 5000)
-            return f"Error: An unexpected error occurred: {e}"
+                self.add_chat_bubble("Error: Failed to get response.", "Assistant", chat_display)
+        except RuntimeError:
+            # Dialog or widgets likely destroyed
+            pass
         
     def list_ollama_models(self):
         """Lists available LLM models (Ollama) by querying the container. This method is Ollama-specific."""
