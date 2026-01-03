@@ -678,11 +678,14 @@ class TrayChatAIManager:
         
         # Convert Markdown to HTML using the markdown library
         # extensions: 'fenced_code' for code blocks, 'nl2br' for newlines
-        final_html = markdown.markdown(text, extensions=['fenced_code', 'nl2br'])
+        final_html = markdown.markdown(text, extensions=['fenced_code', 'nl2br', 'tables', 'sane_lists'])
+        
+        # Style tables (add border and width)
+        final_html = final_html.replace('<table>', '<table border="1" cellspacing="0" cellpadding="5" width="100%">')
         
         # Style code blocks for dark mode (QLabel rich text support)
         # We wrap pre blocks in a table to ensure background color renders correctly in Qt
-        final_html = final_html.replace('<pre><code>', '<table border="0" cellpadding="10" bgcolor="#2b2b2b" width="100%"><tr><td><pre style="color: #f8f8f2;">')
+        final_html = re.sub(r'<pre><code[^>]*>', '<table border="0" cellpadding="10" bgcolor="#2b2b2b" width="100%"><tr><td><pre style="color: #f8f8f2;">', final_html)
         final_html = final_html.replace('</code></pre>', '</pre></td></tr></table>')
         
         
