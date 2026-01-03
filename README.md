@@ -12,10 +12,9 @@ It serves two main functions:
 1. Docker based Ollama management (status, pull model, remove model , start and stop docker instance running llms)
 2. Quick chat interface accessible from system tray with options to run single prompt on multiple models at once. 
 
-It was built for managing Ai models from tray, but this prompt to multiple models quickly became its core feature. 
+It was built for managing Ai models from tray, but this prompt to multiple models quickly became its core feature (It's nice to compare capabilities of the model). 
 As long time user of open source I thought I should return somethin back to community. 
 
-Hope you find it usefull. 
 
 ## Functions and GUI
 
@@ -71,10 +70,10 @@ https://github.com/user-attachments/assets/4ee96f3e-75c8-4be9-a838-429e1794580b
 
 ## Features
 
+*   **Chat Interface**: A built-in chat window with syntax highlighting for code blocks that can interact with multiple models simultaniously for the same promt, so you can compare results.
 *   **System Tray Indicator**: Visual status of your Ollama container (Stopped, Running on CPU, Running on GPU). Detection is done by checking the Docker process list giving square around lama icon if CPU and round for GPU. 
 *   **Control**: Start and Stop the Ollama Docker container easily.
 *   **Model Management**: Pull new models and select which model to run.
-*   **Chat Interface**: A built-in chat window with syntax highlighting for code blocks.
 *   **Docker Integration**: Works with existing Docker setups or Docker Compose.
 
 ## Prerequisites
@@ -82,8 +81,8 @@ https://github.com/user-attachments/assets/4ee96f3e-75c8-4be9-a838-429e1794580b
 *   **Linux** (Tested on Debian/Ubuntu based systems)
 *   **User permissions**: Ensure your user is in the `docker` group (`sudo usermod -aG docker $USER`).
 *   **Docker** installed and running.
-*   **Docker nvidia container runtime** for GPU support (if you're using a machine with a GPU).
-*   **Python 3**
+*   **Docker nvidia container runtime** for GPU support (if you're using a machine with a GPU) otherwise you will get square around icon.
+*   **Python 3** (if you use Appimage you )
 
 ## Installation
 
@@ -114,13 +113,12 @@ sudo apt-get install -f
     python3 tray_chat_ai.py
     ```
 
-## Usage
-
-1.  Launch the application.
-2.  Right-click the tray icon (Llama head).
-3.  Select **Start LLM Server** if it's not running.
-4.  Select **Chat with selected LLM Model** to open the chat interface.
 
 ## License
 
 This project is licensed under the GPLv3 License - see the LICENSE.txt file for details.
+
+## Contribution 
+
+Feel free to contribute to this program. Keep in mind the scope of the program is using local AI models for integrating other comercial AI products contact me. 
+

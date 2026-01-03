@@ -49,7 +49,7 @@ class TrayChatAIManager:
         if not os.path.exists(self.user_data_dir):
             os.makedirs(self.user_data_dir)
             
-        # Path for the autostart .desktop file, consistent with new name
+        # Path for the autostart .desktop file, consistent with new name (desktop entry name should match application name)
         self.autostart_file = os.path.join(os.path.expanduser("~"), ".config", "autostart", "tray-chat-ai.desktop")
 
         # set up logging for the app 
@@ -67,6 +67,7 @@ class TrayChatAIManager:
         logger_handler.setFormatter(logging.Formatter('%(asctime)s: %(levelname)s - %(message)s'))
         logger.addHandler(logger_handler)
         
+        # read and write settings from settings.json in user_data_dir
         # load settings from settings.json (if exists) otherwise create one with default values
         settings_json = self.read_settings()
         self.docker_image_name = settings_json.get('ollama_container_name', 'ollama') # default to 'ollama' if not set
@@ -75,18 +76,22 @@ class TrayChatAIManager:
         # Ensure selected_ollama_model is always a list
         raw_model = settings_json.get('selected_ollama_model', [])
         if isinstance(raw_model, str):
-            self.selected_ollama_model = [raw_model]
+            self.selected_ollama_models = [raw_model]
+            self.update_tooltip_with_selectd_models() # update tooltip to reflect selected model
         elif raw_model is None:
-            self.selected_ollama_model = []
+            self.selected_ollama_models = []
         else:
-            self.selected_ollama_model = raw_model
+            self.selected_ollama_models = raw_model
             
         self.check_timer_interval = settings_json.get('status_check_interval', 5000) # default to 5000 ms
-        settings_json['selected_ollama_model'] = self.selected_ollama_model
-        self.save_settings(settings_json)
+        settings_json['selected_ollama_model'] = self.selected_ollama_models # get a list of selected models 
+        self.save_settings(settings_json) # if settings are missing keys, save them with defaults
         
         self.docker_client = None
         self.docker_available = False
+        
+        # Check if user installed Docker and if Docker daemon is running we should give some instructions for those not running Docker with user permissions
+        # 
         try:
             self.docker_client = DockerClient.from_env()
             self.docker_client.ping() # A simple operation to confirm connection
@@ -194,6 +199,7 @@ class TrayChatAIManager:
 
         self.menu.addSeparator()
 
+        # Connect the menu to the tray icon and handle left-click to open chat
         self.tray.setContextMenu(self.menu)
         self.tray.activated.connect(self.start_chat_from_tray_icon)
 
@@ -220,6 +226,15 @@ class TrayChatAIManager:
                 self.tray.setIcon(QIcon(os.path.join(self.image_dir, "tray_chat_ai_default.png"))) # Fallback to default icon
             self.timer.stop() # No need to check status if Docker is not available
         
+    def update_tooltip_with_selectd_models(self):
+        if self.selected_ollama_models:
+            model_name = ", ".join(self.selected_ollama_models)
+        else:
+            model_name = "No model selected"
+        
+        self.tray.setToolTip(f"TrayChat AI - Selected Model(s): {model_name}")
+    
+    
     def change_interval_timer_variable(self): 
         # show input dialog to change timer interval variable
         current_int_seconds = self.check_timer_interval // 1000
@@ -253,10 +268,10 @@ class TrayChatAIManager:
                 if reply == QMessageBox.Yes:
                     self.remove_language_model_from_ollama(item)
                     # Optionally, update the selected model if the removed one was selected
-                    if self.selected_ollama_model and item in self.selected_ollama_model:
-                        self.selected_ollama_model.remove(item)
+                    if self.selected_ollama_models and item in self.selected_ollama_models:
+                        self.selected_ollama_models.remove(item)
                         settings = self.read_settings()
-                        settings['selected_ollama_model'] = self.selected_ollama_model
+                        settings['selected_ollama_model'] = self.selected_ollama_models
                         self.save_settings(settings)
                     self.update_status() # Refresh status to reflect changes
         else:
@@ -324,16 +339,16 @@ class TrayChatAIManager:
         
         # Ensure it is never empty if we have a selection (except on first run logic handled elsewhere)
         if selected_models:
-            self.selected_ollama_model = selected_models
+            self.selected_ollama_models = selected_models
 
-        if self.selected_ollama_model:
-            model_name = ", ".join(self.selected_ollama_model)
+        if self.selected_ollama_models:
+            model_name = ", ".join(self.selected_ollama_models)
         else:
             model_name = "No model selected"
 
         # store selected model in settings to persist between sessions
         settings = self.read_settings()
-        settings['selected_ollama_model'] = self.selected_ollama_model
+        settings['selected_ollama_model'] = self.selected_ollama_models
         self.save_settings(settings)
         
         # update menu text to show selected model
@@ -362,8 +377,8 @@ class TrayChatAIManager:
         dialog = QDialog() # This dialog is for chatting with an LLM model
         
         display_model_name = "No model selected"
-        if self.selected_ollama_model:
-            display_model_name = ", ".join(self.selected_ollama_model)
+        if self.selected_ollama_models:
+            display_model_name = ", ".join(self.selected_ollama_models)
         
         dialog.setWindowTitle("Chat with LLM model: " + display_model_name)
         layout = QVBoxLayout()
@@ -383,7 +398,7 @@ class TrayChatAIManager:
             dialog.resize(600, 600)
         
         # first call function to sellect ollama model if not selected yet 
-        if not self.selected_ollama_model:
+        if not self.selected_ollama_models:
             self.choose_ollama_model()
             
         
@@ -412,7 +427,7 @@ class TrayChatAIManager:
                 item.setFlags(QtCore.Qt.ItemIsUserCheckable | QtCore.Qt.ItemIsEnabled)
                 
                 is_checked = False
-                if self.selected_ollama_model and model_name in self.selected_ollama_model:
+                if self.selected_ollama_models and model_name in self.selected_ollama_models:
                     is_checked = True
                 
                 if is_checked:
@@ -637,11 +652,11 @@ class TrayChatAIManager:
             client = self.docker_client
             container = client.containers.get(self.docker_image_name)
             if container.status == "running":
-                if not self.selected_ollama_model:
+                if not self.selected_ollama_models:
                     self.show_status_message("Error", "No LLM model selected. Please select one first.", 5000)
                     return "Error: No model selected. Please select a model."
 
-                models_to_run = self.selected_ollama_model
+                models_to_run = self.selected_ollama_models
                 
                 final_output = ""
                 for model in models_to_run:
@@ -722,13 +737,13 @@ class TrayChatAIManager:
             models = [line.split()[0] for line in models_output.splitlines() if line.strip() and line.split()[0] != "NAME"]
             
             current_index = 0
-            if self.selected_ollama_model and self.selected_ollama_model[0] in models:
-                current_index = models.index(self.selected_ollama_model[0])
+            if self.selected_ollama_models and self.selected_ollama_models[0] in models:
+                current_index = models.index(self.selected_ollama_models[0])
             
             item, ok = QInputDialog.getItem(None, "Select Ollama Model", "Available Models:", models, current_index, False) # 0 is default index
             if ok and item:
                 QMessageBox.information(None, "Model Selected", f"You selected: {item}")
-                self.selected_ollama_model = [item]
+                self.selected_ollama_models = [item]
                 
                 # store selected model in settings to persist between sessions
                 settings = self.read_settings()
