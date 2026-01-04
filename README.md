@@ -5,8 +5,8 @@
 
 # Tray Chat Ai 
 
-A lightweight system tray application for Linux to manage local LLM (Large Language Model)  running on **Ollama** and **Docker** (for now). 
-on your personal computer.  Main reason for using this is to as quickly as possible to local Ai chat, see it's status and manage models. 
+Tray chat AI is a tiny program for chat and management of local Docker ollama instance. While main purpose was management (start, stop, and model management). I tried to make interface for chat as "chatty" as possible since I found it very convinient. 
+There is still a lot of features to work on but for v1.0 this is ok. Most work was done on chat interface and rendering of content. As such it hase a feature to chat with ** multiple installed models at once **.  
 
 It serves two main functions: 
 1. Docker based Ollama management (status, pull model, remove model , start and stop docker instance running llms)
