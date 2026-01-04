@@ -340,7 +340,7 @@ class TrayChatAIManager:
             self.timer.stop() # No need to check status if Docker is not available
         
     def select_active_connection_openai(self): 
-        """ Select active connection from list of all the connections. 
+        """ Select active connection from list of all the connections (called from menu ). 
         """
         dialog = QDialog()
         dialog.setWindowTitle("Select Active API Connection")
