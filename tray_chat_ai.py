@@ -9,6 +9,7 @@ import subprocess
 import re
 import html # Keep html import as it's used in chat display
 import markdown
+import time
 from PyQt5.QtWidgets import QApplication,QComboBox, QSystemTrayIcon, QMenu, QFileDialog, QMessageBox, QInputDialog, \
     QStyle, QAction, QDialog, QVBoxLayout, QTextEdit, QPushButton, QListWidget, \
         QListWidgetItem, QLabel, QHBoxLayout, QWidget, QAbstractItemView, QLineEdit, QShortcut
@@ -21,6 +22,7 @@ import logging.handlers
 import docker
 from docker import DockerClient, errors as docker_errors
 import json
+from openai import OpenAI
 
 # Worker for non-blocking Ollama interactions
 # usage:   
@@ -35,13 +37,14 @@ class OllamaWorker(QThread):
     response_ready = pyqtSignal(str)
     status_message = pyqtSignal(str, str, int)
 
-    def __init__(self, docker_client, docker_image_name, selected_models, prompt, docker_available):
+    def __init__(self, docker_client, docker_image_name, selected_models, prompt, docker_available, openai_connection):
         super().__init__()
         self.docker_client = docker_client
         self.docker_image_name = docker_image_name
         self.selected_models = selected_models
         self.prompt = prompt
         self.docker_available = docker_available
+        self.openai_connection = openai_connection
 
     def run(self):
         if not self.docker_available:
@@ -49,7 +52,6 @@ class OllamaWorker(QThread):
             self.response_ready.emit("Error: Docker is not available.")
             return
         try:
-            ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
             client = self.docker_client
             container = client.containers.get(self.docker_image_name)
             if container.status == "running":
@@ -58,18 +60,28 @@ class OllamaWorker(QThread):
                     self.response_ready.emit("Error: No model selected. Please select a model.")
                     return
 
-                models_to_run = self.selected_models
+                # Remove duplicates from selected_models to prevent running the same model multiple times
+                models_to_run = list(dict.fromkeys(self.selected_models))
                 
+                # Initialize OpenAI client
+                base_url_get = self.openai_connection['base_url']
+                api_key_get = self.openai_connection['api_key']
+                ai_client = OpenAI(base_url=base_url_get, api_key=api_key_get)
+
                 final_output = ""
                 for model in models_to_run:
-                    # Use subprocess to pipe input to stdin, avoiding shell quoting issues
-                    cmd = ["docker", "exec", "-i", self.docker_image_name, "ollama", "run", model]
-                    result = subprocess.run(cmd, input=self.prompt, capture_output=True, text=True, check=True) # -i is needed for piping input
-                    output = ansi_escape.sub('', result.stdout)
+                    start_time = time.time()
+                    response = ai_client.chat.completions.create(
+                        model=model,
+                        messages=self.prompt
+                    )
+                    output = response.choices[0].message.content
+                    end_time = time.time()
+                    elapsed_time = end_time - start_time
                     if len(models_to_run) > 1:
-                        final_output += f"**Model: {model}**\n{output}\n\n"
+                        final_output += f"<span style='background-color: black; color: white; font-weight: bold; padding:2px;'>Model: {model}  </span>\n\n{output}\n\n*Execution time: {elapsed_time:.2f} seconds*\n\n"
                     else:
-                        final_output += output
+                        final_output += output + f"\n\n*Execution time: {elapsed_time:.4f} seconds*"
                 
                 self.response_ready.emit(final_output)
             else:
@@ -88,11 +100,6 @@ class OllamaWorker(QThread):
             logging.error(f"Docker API error when sending prompt: {e}")
             self.status_message.emit("Docker Error", f"Failed to send prompt due to Docker API error: {e}", 5000)
             self.response_ready.emit(f"Error: Docker API error: {e}")
-        except subprocess.CalledProcessError as e:
-            cleaned_stderr = ansi_escape.sub('', e.stderr)
-            logging.error(f"Error executing ollama command in container: {cleaned_stderr}") 
-            self.status_message.emit("LLM Server Command Error", f"Error in LLM server command: {cleaned_stderr}", 5000)
-            self.response_ready.emit(f"Error: LLM server command failed: {cleaned_stderr}")
         except Exception as e:
             logging.error(f"An unexpected error occurred when sending prompt: {e}")
             self.status_message.emit("Error", f"An unexpected error occurred: {e}", 5000)
@@ -147,6 +154,19 @@ class TrayChatAIManager:
         # read and write settings from settings.json in user_data_dir
         # load settings from settings.json (if exists) otherwise create one with default values
         settings_json = self.read_settings()
+        
+        # create openai connections and store them to settings, load them at startup 
+        # Initialize OpenAI connections dictionary
+        
+        openai_connections_default = {
+            "ollama": {
+                "base_url": "http://localhost:11434/v1",
+                "api_key": "ollama"
+            }
+        }
+        
+        self.openai_connections = settings_json.get('openai_connections', openai_connections_default)
+        self.active_connection = settings_json.get('active_connection', 'ollama')
         self.docker_image_name = settings_json.get('ollama_container_name', 'ollama') # default to 'ollama' if not set
         self.docker_compose_path = settings_json.get('docker_compose_path', None)
         
@@ -204,7 +224,7 @@ class TrayChatAIManager:
         # add option to send prompt to ollama and show result in dialog
         self.send_prompt_action = QAction("Chat with selected LLM Model")
         # add chat icon from image folder 
-        chat_icon_path = os.path.join(self.image_dir, "tray_chat_ai_window_icon.png")
+        chat_icon_path = os.path.join(self.image_dir, "tray_chat_ai_window_icon_simple.png")
         chat_icon = QIcon(chat_icon_path)  # Replace with your icon path
         
         self.send_prompt_action.setIcon(chat_icon)
@@ -228,40 +248,56 @@ class TrayChatAIManager:
         self.stop_action.setIcon(stop_icon)
         self.stop_action.triggered.connect(self.stop_container)
         self.menu.addAction(self.stop_action)
-        
         self.menu.addSeparator()
+        
+        self.sel_act_conn_action = QAction("Select active connection")
+        self.sel_act_conn_action.triggered.connect(self.select_active_connection_openai)
+        self.menu.addAction(self.sel_act_conn_action)
+        self.menu.addSeparator()
+
+        self.manage_connections_action = QAction("Manage API Connections")
+        self.manage_connections_action.triggered.connect(self.manage_openai_connections_dialog)
+        self.menu.addAction(self.manage_connections_action)
+        self.menu.addSeparator()
+
+
+        self.management_menu = self.menu.addMenu("Ollama Management")
 
         self.choose_docker_compose_file_action = QAction("Set Docker Compose File")
         self.choose_docker_compose_file_action.triggered.connect(self.choose_docker_compose_file)
-        self.menu.addAction(self.choose_docker_compose_file_action)
-        self.menu.addSeparator()
+        self.management_menu.addAction(self.choose_docker_compose_file_action)
+        self.management_menu.addSeparator()
         
         # New action for pulling models
         self.pull_model_action = QAction("Pull LLM Model")
+        pull_model_icon =  QApplication.style().standardIcon(QStyle.SP_ArrowDown)
+        self.pull_model_action.setIcon(pull_model_icon)
         self.pull_model_action.triggered.connect(self.open_pull_model_dialog)
-        self.menu.addAction(self.pull_model_action)
-        self.menu.addSeparator()
+        self.management_menu.addAction(self.pull_model_action)
+        self.management_menu.addSeparator()
         
         # New action for removing models
         self.remove_model_action = QAction("Remove LLM Model")
         self.remove_model_action.triggered.connect(self.remove_language_model_dialog)
-        self.menu.addAction(self.remove_model_action)
-        self.menu.addSeparator()
+        remove_model_icon =  QApplication.style().standardIcon(QStyle.SP_DialogResetButton)
+        self.remove_model_action.setIcon(remove_model_icon)
+        self.management_menu.addAction(self.remove_model_action)
+        self.management_menu.addSeparator()
         
         # change timer interval for status check
         self.change_timer_interval_action =QAction("Set Status Check Interval")
         self.change_timer_interval_action.triggered.connect(self.change_interval_timer_variable)
-        self.menu.addAction(self.change_timer_interval_action)
-        self.menu.addSeparator()
+        self.management_menu.addAction(self.change_timer_interval_action)
+        self.management_menu.addSeparator()
 
         # if running docker image is not called ollama select ollama from running docker images
         self.choose_running_docker_image_as_ollama = QAction("Choose Running Docker Image for LLM Server")
         self.choose_running_docker_image_as_ollama.triggered.connect(self.choose_from_running_docker_images)
-        self.menu.addAction(self.choose_running_docker_image_as_ollama)
+        self.management_menu.addAction(self.choose_running_docker_image_as_ollama)
         
         self.menu.addSeparator()
         
-        self.autostart_action = QAction("Run on Startup")
+        self.autostart_action = QAction("Run on Startup") 
         self.autostart_action.setCheckable(True)
         self.autostart_action.setChecked(os.path.exists(self.autostart_file))
         self.autostart_action.triggered.connect(self.toggle_autostart)
@@ -303,6 +339,50 @@ class TrayChatAIManager:
                 self.tray.setIcon(QIcon(os.path.join(self.image_dir, "tray_chat_ai_default.png"))) # Fallback to default icon
             self.timer.stop() # No need to check status if Docker is not available
         
+    def select_active_connection_openai(self): 
+        """ Select active connection from list of all the connections. 
+        """
+        dialog = QDialog()
+        dialog.setWindowTitle("Select Active API Connection")
+        layout = QVBoxLayout()
+
+        combo_box = QComboBox()
+        combo_box.addItems(self.openai_connections.keys())
+        
+        # Set current active connection
+        if self.active_connection in self.openai_connections:
+            combo_box.setCurrentText(self.active_connection)
+
+        layout.addWidget(QLabel("Select the active API connection:"))
+        layout.addWidget(combo_box)
+
+        buttons_layout = QHBoxLayout()
+        ok_button = QPushButton("OK")
+        cancel_button = QPushButton("Cancel")
+        buttons_layout.addWidget(ok_button)
+        buttons_layout.addWidget(cancel_button)
+        layout.addLayout(buttons_layout)
+
+        dialog.setLayout(layout)
+
+        def accept_selection():
+            selected_connection = combo_box.currentText()
+            if selected_connection != self.active_connection:
+                self.active_connection = selected_connection
+                settings = self.read_settings()
+                settings['active_connection'] = self.active_connection
+                self.save_settings(settings)
+                self.show_status_message("Connection Changed", f"Active connection set to '{self.active_connection}'.", 3000)
+            dialog.accept()
+
+        ok_button.clicked.connect(accept_selection)
+        cancel_button.clicked.connect(dialog.reject)
+
+        dialog.exec_()
+    
+    
+    
+    
     def update_tooltip_with_selectd_models(self):
         if self.selected_ollama_models:
             model_name = ", ".join(self.selected_ollama_models)
@@ -310,6 +390,7 @@ class TrayChatAIManager:
             model_name = "No model selected"
         
         self.tray.setToolTip(f"TrayChat AI - Selected Model(s): {model_name}")
+        
     
     
     def change_interval_timer_variable(self): 
@@ -330,9 +411,8 @@ class TrayChatAIManager:
     
     def remove_language_model_dialog(self):
         # show dropdown dialog with available ollama models to remove one
-        models_output = self.list_ollama_models()
-        if models_output:
-            models = [line.split()[0] for line in models_output.splitlines() if line.strip() and line.split()[0] != "NAME"]
+        models = self.list_ollama_models()
+        if models is not None:
             if not models:
                 QMessageBox.information(None, "No Models", "No LLM models found to remove.")
                 return
@@ -494,9 +574,8 @@ class TrayChatAIManager:
         self.model_combo_box.setStyleSheet("QComboBox { border: 1px solid #0d5c7a; border-radius: 5px; padding: 1px 18px 1px 3px; }")
         
         # Populate model combo box use multi 
-        models_output = self.list_ollama_models()
-        if models_output:
-            models = [line.split()[0] for line in models_output.splitlines() if line.strip() and line.split()[0] != "NAME"]
+        models = self.list_ollama_models()
+        if models is not None:
             
             model = QtGui.QStandardItemModel()
             for model_name in models:
@@ -580,7 +659,7 @@ class TrayChatAIManager:
                                     border-left: 2px solid #ffffff;
                                     border-right: 2px solid #bebebe;
                                     border-bottom: 2px solid #bebebe;
-                                    
+                                    font-size: 16px;
                                     font-weight: bold;
                                     padding: 10px 20px;
                                 }
@@ -611,7 +690,7 @@ class TrayChatAIManager:
                                 border-left: 2px solid #8ec6e8;  /* Lighter blue */
                                 border-right: 2px solid #3f7b9e; /* Darker blue */
                                 border-bottom: 2px solid #3f7b9e;/* Darker blue */
-                                
+                                font-size: 16px;
                                 font-weight: bold;
                                 padding: 10px 20px;
                             }
@@ -671,7 +750,7 @@ class TrayChatAIManager:
         settings['chat_window_geometry'] = dialog.saveGeometry().toHex().data().decode()
         self.save_settings(settings)
 
-    def add_chat_bubble(self, text, role, chat_display):
+    def add_chat_bubble(self, text, role, chat_display, reask_callback=None):
         item = QListWidgetItem()
         widget = QWidget()
         layout = QHBoxLayout()
@@ -706,6 +785,26 @@ class TrayChatAIManager:
             label.setStyleSheet("background-color: #DCF8C6; color: black; border-radius: 15px; padding: 10px; font-size: 12pt;")
             # Add stretch before the widget to push it to the right
             layout.addStretch()
+            
+            if reask_callback:
+                reask_btn = QPushButton()
+                reask_btn.setIcon(QApplication.style().standardIcon(QStyle.SP_BrowserReload))
+                reask_btn.setToolTip("Re-ask this question")
+                reask_btn.setFixedSize(30, 30)
+                reask_btn.setCursor(QtCore.Qt.PointingHandCursor)
+                reask_btn.setStyleSheet("""
+                    QPushButton {
+                        background-color: transparent;
+                        border: none;
+                        border-radius: 15px;
+                    }
+                    QPushButton:hover {
+                        background-color: #d0d0d0;
+                    }
+                """)
+                reask_btn.clicked.connect(lambda checked=False, t=text: reask_callback(t))
+                layout.addWidget(reask_btn)
+            
             layout.addWidget(label)
         else:
             label.setStyleSheet("background-color: #FFFFFF; color: black; border-radius: 15px; padding: 10px; font-size: 12pt;")
@@ -723,35 +822,42 @@ class TrayChatAIManager:
 
     
     
-    def send_prompt_and_show_result(self, prompt_input, chat_display, dialog):
+    def send_prompt_and_show_result(self, prompt_input, chat_display, dialog, manual_text=None):
         # read prompt and regognize links to webpage
         # use scraping to get text from webpage. Add scraped contents to prompt. 
         
-        prompt = prompt_input.toPlainText().strip()
+        if not prompt_input.isEnabled():
+            return
+
+        if manual_text:
+            prompt = manual_text
+        else:
+            prompt = prompt_input.toPlainText().strip()
         
         if not prompt:
             return
         prompt_input.setDisabled(True)
 
         # Display User Message
-        self.add_chat_bubble(prompt, "User", chat_display)
+        reask_cb = lambda t: self.send_prompt_and_show_result(prompt_input, chat_display, dialog, manual_text=t)
+        self.add_chat_bubble(prompt, "User", chat_display, reask_callback=reask_cb)
         
-        prompt_input.clear()
+        if not manual_text:
+            prompt_input.clear()
         QApplication.processEvents()
 
         # Construct Contextual Prompt
-        full_prompt = ""
-        # Limit history to the last 20 messages to avoid exceeding the model's context window
-        # (Default context is often 2048 or 4096 tokens)
+        messages = []
         n_past_messages = 20
         for msg in dialog.chat_history[-n_past_messages:]:
-            full_prompt += f"{msg['role']}: {msg['content']}\n"
-        full_prompt += f"User: {prompt}\nAssistant:"
+            role = "user" if msg['role'] == "User" else "assistant"
+            messages.append({"role": role, "content": msg['content']})
+        messages.append({"role": "user", "content": prompt})
 
         QApplication.setOverrideCursor(QtCore.Qt.WaitCursor)
         
         # Start Worker (dont block UI while working)
-        self.worker = OllamaWorker(self.docker_client, self.docker_image_name, self.selected_ollama_models, full_prompt, self.docker_available)
+        self.worker = OllamaWorker(self.docker_client, self.docker_image_name, self.selected_ollama_models, messages, self.docker_available, self.openai_connections['ollama'])
         self.worker.response_ready.connect(lambda result: self.handle_worker_response(result, prompt, chat_display, dialog, prompt_input))
         self.worker.status_message.connect(self.show_status_message)
         self.worker.finished.connect(QApplication.restoreOverrideCursor)
@@ -772,7 +878,7 @@ class TrayChatAIManager:
             pass
         
     def list_ollama_models(self):
-        """Lists available LLM models (Ollama) by querying the container. This method is Ollama-specific."""
+        """Lists available LLM models (Ollama) using OpenAI API."""
         if not self.docker_available:
             self.show_status_message("Error", "Docker is not available. Cannot list models.", 5000)
             return None
@@ -780,15 +886,10 @@ class TrayChatAIManager:
             client = self.docker_client
             container = client.containers.get(self.docker_image_name)
             if container.status == "running":
-                exec_result = container.exec_run("ollama list", stdout=True, stderr=True) # This command is Ollama-specific
-                if exec_result.exit_code == 0:
-                    output = exec_result.output.decode('utf-8')
-                    return output
-                else:
-                    error_output = exec_result.output.decode('utf-8')
-                    logging.error(f"Ollama list command failed in container: {error_output}") # This error is Ollama-specific
-                    self.show_status_message("LLM Server Error", f"Failed to list models: {error_output}", 5000)
-                    return None
+                # Use OpenAI API to list models
+                ai_client = OpenAI(base_url='http://localhost:11434/v1', api_key='ollama')
+                models_response = ai_client.models.list()
+                return [model.id for model in models_response.data]
             else:
                 logging.error("LLM server container (Ollama) is not running.")
                 self.show_status_message("Error", "LLM server container is not running. Please start it first.", 5000)
@@ -807,9 +908,8 @@ class TrayChatAIManager:
         
     def choose_ollama_model(self):
         # Placeholder for choosing LLM model (Ollama) from available models. This method is Ollama-specific.
-        models_output = self.list_ollama_models()
-        if models_output:
-            models = [line.split()[0] for line in models_output.splitlines() if line.strip() and line.split()[0] != "NAME"]
+        models = self.list_ollama_models()
+        if models is not None:
             
             current_index = 0
             if self.selected_ollama_models and self.selected_ollama_models[0] in models:
@@ -1086,6 +1186,119 @@ class TrayChatAIManager:
             self.send_prompt_action.setEnabled(False)
             self.tray.setIcon(QIcon(os.path.join(self.image_dir, "llm_tray_error.png"))) # This icon is for error
             
+    def manage_openai_connections_dialog(self):
+        dialog = QDialog()
+        dialog.setWindowTitle("Manage API Connections")
+        dialog.resize(600, 400)
+        layout = QHBoxLayout()
+
+        # List of connections
+        list_widget = QListWidget()
+        list_widget.addItems(self.openai_connections.keys())
+        layout.addWidget(list_widget)
+
+        # Details area
+        details_widget = QWidget()
+        details_layout = QVBoxLayout()
+        
+        name_input = QLineEdit()
+        name_input.setPlaceholderText("Connection Name (e.g. ollama)")
+        base_url_input = QLineEdit()
+        base_url_input.setPlaceholderText("Base URL")
+        api_key_input = QLineEdit()
+        api_key_input.setPlaceholderText("API Key")
+        
+        details_layout.addWidget(QLabel("Name:"))
+        details_layout.addWidget(name_input)
+        details_layout.addWidget(QLabel("Base URL:"))
+        details_layout.addWidget(base_url_input)
+        details_layout.addWidget(QLabel("API Key:"))
+        details_layout.addWidget(api_key_input)
+        
+        # Buttons
+        btn_layout = QHBoxLayout()
+        new_btn = QPushButton("New")
+        delete_btn = QPushButton("Delete")
+        save_btn = QPushButton("Save")
+        
+        btn_layout.addWidget(new_btn)
+        btn_layout.addWidget(delete_btn)
+        btn_layout.addWidget(save_btn)
+        
+        details_layout.addLayout(btn_layout)
+        details_layout.addStretch()
+        details_widget.setLayout(details_layout)
+        
+        layout.addWidget(details_widget)
+        dialog.setLayout(layout)
+
+        # Logic
+        def load_details(item):
+            name = item.text()
+            data = self.openai_connections.get(name, {})
+            name_input.setText(name)
+            name_input.setReadOnly(True) 
+            base_url_input.setText(data.get("base_url", ""))
+            api_key_input.setText(data.get("api_key", ""))
+
+        def new_connection():
+            list_widget.clearSelection()
+            name_input.clear()
+            name_input.setReadOnly(False)
+            base_url_input.clear()
+            api_key_input.clear()
+            name_input.setFocus()
+
+        def save_connection():
+            name = name_input.text().strip()
+            if not name:
+                QMessageBox.warning(dialog, "Error", "Connection name cannot be empty.")
+                return
+            
+            base_url = base_url_input.text().strip()
+            api_key = api_key_input.text().strip()
+            
+            self.openai_connections[name] = {
+                "base_url": base_url,
+                "api_key": api_key
+            }
+            
+            # Update list if new
+            items = list_widget.findItems(name, QtCore.Qt.MatchExactly)
+            if not items:
+                list_widget.addItem(name)
+            
+            # Save to settings
+            settings = self.read_settings()
+            settings['openai_connections'] = self.openai_connections
+            self.save_settings(settings)
+            QMessageBox.information(dialog, "Saved", f"Connection '{name}' saved.")
+
+        def delete_connection():
+            current_item = list_widget.currentItem()
+            if not current_item:
+                return
+            name = current_item.text()
+            
+            reply = QMessageBox.question(dialog, "Confirm Delete", f"Delete connection '{name}'?", QMessageBox.Yes | QMessageBox.No)
+            if reply == QMessageBox.Yes:
+                if name in self.openai_connections:
+                    del self.openai_connections[name]
+                    # Save to settings
+                    settings = self.read_settings()
+                    settings['openai_connections'] = self.openai_connections
+                    self.save_settings(settings)
+                
+                list_widget.takeItem(list_widget.row(current_item))
+                new_connection()
+
+        list_widget.itemClicked.connect(load_details)
+        new_btn.clicked.connect(new_connection)
+        save_btn.clicked.connect(save_connection)
+        delete_btn.clicked.connect(delete_connection)
+
+        dialog.exec_()
+
     def choose_from_running_docker_images(self):
         # List running docker containers and let user choose one to set as LLM server (Ollama). This method is Ollama-specific.
         if not self.docker_available:

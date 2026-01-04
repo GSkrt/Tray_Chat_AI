@@ -12,7 +12,8 @@ if __name__ == "__main__":
         install_requires=[
             "PyQt5",
             "docker",
-            "markdown"
+            "markdown",
+            "openai"
         ],
         setup_requires=["setuptools"],
         entry_points={
@@ -21,7 +22,7 @@ if __name__ == "__main__":
             ],
         },
         data_files=[
-            ("share/tray-chat-ai/images", ["images/tray_chat_ai_default.png", "images/tray_chat_ai_cpu_running.png", "images/tray_chat_ai_gpu_running.png", "images/tray_chat_ai_not_running.png", "images/tray_chat_ai_window_icon.png"]),
+            ("share/tray-chat-ai/images", ["images/tray_chat_ai_default.png", "images/tray_chat_ai_cpu_running.png", "images/tray_chat_ai_gpu_running.png", "images/tray_chat_ai_not_running.png", "images/tray_chat_ai_window_icon.png", "images/tray_chat_ai_window_icon_simple.png"]),
             ("share/pixmaps", ["images/tray_chat_ai_default.png"]),
             ("share/applications", ["tray-chat-ai.desktop"]),
             ("share/doc/tray-chat-ai", ["LICENSE.txt"]),
