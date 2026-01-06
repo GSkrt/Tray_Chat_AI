@@ -1,8 +1,0 @@
-# security.txt template
-# Reference: https://securitytxt.org/
-
-# Required: Contact information for reporting vulnerabilities.
-Contact: mailto:gregor.skrt@gmail.com
-
-# Required: Expiration date of this file (ISO 8601).
-Expires: 2026-01-01T00:00:00.000Z
