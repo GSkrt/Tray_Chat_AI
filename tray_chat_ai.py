@@ -1190,10 +1190,7 @@ class TrayChatAIManager:
         dialog.resize(600, 400)
         layout = QHBoxLayout()
         
-        
-       
-            
-
+    
         # List of connections
         
         list_widget = QListWidget()
