@@ -75,6 +75,11 @@ class OllamaWorker(QThread):
                         model=model,
                         messages=self.prompt
                     )
+                    # get number of tokens used from response usage
+                    tokens_used = response.usage.total_tokens
+                    # append token usage info to output
+                    final_output += f"\n*Tokens used: {tokens_used}*"
+                    
                     output = response.choices[0].message.content
                     end_time = time.time()
                     elapsed_time = end_time - start_time

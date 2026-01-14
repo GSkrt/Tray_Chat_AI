@@ -1,3 +1,4 @@
 docker
 PyQt5
 markdown
+openai
