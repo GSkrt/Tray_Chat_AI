@@ -32,79 +32,64 @@ from openai import OpenAI
 # self.worker.finished.connect(QApplication.restoreOverrideCursor)
 # self.worker.start()
 
-class OllamaWorker(QThread):
+class AIWorker(QThread):
     
     response_ready = pyqtSignal(str)
     status_message = pyqtSignal(str, str, int)
 
-    def __init__(self, docker_client, docker_image_name, selected_models, prompt, docker_available, openai_connection):
+    def __init__(self, selected_models, prompt, openai_connection):
         super().__init__()
-        self.docker_client = docker_client
-        self.docker_image_name = docker_image_name
         self.selected_models = selected_models
         self.prompt = prompt
-        self.docker_available = docker_available
         self.openai_connection = openai_connection
 
     def run(self):
-        if not self.docker_available:
-            self.status_message.emit("Error", "Docker is not available. Cannot send prompt.", 5000)
-            self.response_ready.emit("Error: Docker is not available.")
-            return
+        # Docker-specific checks are now handled in the main thread before starting the worker.
+        # The worker's only job is to communicate with the API endpoint.
+
+        # Common logic for all connections
         try:
-            client = self.docker_client
-            container = client.containers.get(self.docker_image_name)
-            if container.status == "running":
-                if not self.selected_models:
-                    self.status_message.emit("Error", "No LLM model selected. Please select one first.", 5000)
-                    self.response_ready.emit("Error: No model selected. Please select a model.")
-                    return
+            if not self.selected_models:
+                self.status_message.emit("Error", "No LLM model selected. Please select one first.", 5000)
+                self.response_ready.emit("Error: No model selected. Please select a model.")
+                return
 
-                # Remove duplicates from selected_models to prevent running the same model multiple times
-                models_to_run = list(dict.fromkeys(self.selected_models))
-                
-                # Initialize OpenAI client
-                base_url_get = self.openai_connection['base_url']
-                api_key_get = self.openai_connection['api_key']
-                ai_client = OpenAI(base_url=base_url_get, api_key=api_key_get)
+            # Remove duplicates from selected_models to prevent running the same model multiple times
+            models_to_run = list(dict.fromkeys(self.selected_models))
+            
+            # Initialize OpenAI client
+            base_url_get = self.openai_connection.get('base_url')
+            api_key_get = self.openai_connection.get('api_key')
+            ai_client = OpenAI(base_url=base_url_get, api_key=api_key_get)
 
-                final_output = ""
-                for model in models_to_run:
-                    start_time = time.time()
-                    response = ai_client.chat.completions.create(
-                        model=model,
-                        messages=self.prompt
-                    )
-                    # get number of tokens used from response usage
-                    tokens_used = response.usage.total_tokens
-                    # append token usage info to output
-                    final_output += f"\n*Tokens used: {tokens_used}*"
-                    
-                    output = response.choices[0].message.content
-                    end_time = time.time()
-                    elapsed_time = end_time - start_time
-                    if len(models_to_run) > 1:
-                        final_output += f"<span style='background-color: black; color: white; font-weight: bold; padding:2px;'>Model: {model}  </span>\n\n{output}\n\n*Execution time: {elapsed_time:.2f} seconds*\n\n"
-                    else:
-                        final_output += output + f"\n\n*Execution time: {elapsed_time:.4f} seconds*"
+            final_output = ""
+            for model in models_to_run:
+                start_time = time.time()
+                response = ai_client.chat.completions.create(
+                    model=model,
+                    messages=self.prompt
+                )
+                # get number of tokens used from response usage
                 
-                self.response_ready.emit(final_output)
-            else:
-                logging.error("LLM server container (Ollama) is not running.")
-                self.status_message.emit("Error", "LLM server container is not running. Please start it first.", 5000)
-                self.response_ready.emit("Error: LLM server container is not running.")
-        except FileNotFoundError:
-            logging.error("Docker command not found when sending prompt. Is Docker installed and in PATH?")
-            self.status_message.emit("Error", "Docker command not found. Please ensure Docker is installed.", 5000)
-            self.response_ready.emit("Error: Docker command not found.")
-        except docker_errors.NotFound:
-            logging.error(f"LLM server container (Ollama) '{self.docker_image_name}' not found. Cannot send prompt.") 
-            self.status_message.emit("Error", f"LLM server container '{self.docker_image_name}' not found. Please check the container name.", 5000)
-            self.response_ready.emit("Error: LLM server container not found.")
-        except docker_errors.APIError as e:
-            logging.error(f"Docker API error when sending prompt: {e}")
-            self.status_message.emit("Docker Error", f"Failed to send prompt due to Docker API error: {e}", 5000)
-            self.response_ready.emit(f"Error: Docker API error: {e}")
+                # append token usage info to output
+                
+                
+                output = response.choices[0].message.content
+                end_time = time.time()
+                elapsed_time = end_time - start_time
+                if len(models_to_run) > 1:
+                    final_output += f"<span style='background-color: black; color: white; font-weight: bold; padding:2px;'>Model: {model}  </span>\n\n{output}\n\n*Execution time: {elapsed_time:.2f} seconds*\n\n"
+                else:
+                    final_output += output + f"\n\n*Execution time: {elapsed_time:.4f} seconds*"
+                
+                prompt_tokens = response.usage.prompt_tokens
+                completion_tokens = response.usage.completion_tokens
+                total_tokens = response.usage.total_tokens
+                final_output += f"  *Input: {prompt_tokens}, Output: {completion_tokens}, Total: {total_tokens} tokens*"
+
+            
+            
+            self.response_ready.emit(final_output)
         except Exception as e:
             logging.error(f"An unexpected error occurred when sending prompt: {e}")
             self.status_message.emit("Error", f"An unexpected error occurred: {e}", 5000)
@@ -292,8 +277,8 @@ class TrayChatAIManager:
         # change timer interval for status check
         self.change_timer_interval_action =QAction("Set Status Check Interval")
         self.change_timer_interval_action.triggered.connect(self.change_interval_timer_variable)
-        self.management_menu.addAction(self.change_timer_interval_action)
-        self.management_menu.addSeparator()
+        self.menu.addAction(self.change_timer_interval_action)
+        self.menu.addSeparator()
 
         # if running docker image is not called ollama select ollama from running docker images
         self.choose_running_docker_image_as_ollama = QAction("Choose Running Docker Image for LLM Server")
@@ -378,6 +363,7 @@ class TrayChatAIManager:
                 settings['active_connection'] = self.active_connection
                 self.save_settings(settings)
                 self.show_status_message("Connection Changed", f"Active connection set to '{self.active_connection}'.", 3000)
+                self.update_status()
             dialog.accept()
 
         ok_button.clicked.connect(accept_selection)
@@ -414,7 +400,7 @@ class TrayChatAIManager:
     
     def remove_language_model_dialog(self):
         # show dropdown dialog with available ollama models to remove one
-        models = self.list_ollama_models()
+        models = self.list_models()
         if models is not None:
             if not models:
                 QMessageBox.information(None, "No Models", "No LLM models found to remove.")
@@ -577,7 +563,7 @@ class TrayChatAIManager:
         self.model_combo_box.setStyleSheet("QComboBox { border: 1px solid #0d5c7a; border-radius: 5px; padding: 1px 18px 1px 3px; }")
         
         # Populate model combo box use multi 
-        models = self.list_ollama_models()
+        models = self.list_models()
         if models is not None:
             
             model = QtGui.QStandardItemModel()
@@ -859,8 +845,10 @@ class TrayChatAIManager:
 
         QApplication.setOverrideCursor(QtCore.Qt.WaitCursor)
         
-        # Start Worker (dont block UI while working)
-        self.worker = OllamaWorker(self.docker_client, self.docker_image_name, self.selected_ollama_models, messages, self.docker_available, self.openai_connections['ollama'])
+        connection_details = self.openai_connections.get(self.active_connection)
+        
+        # Start Worker (don't block UI while working)
+        self.worker = AIWorker(self.selected_ollama_models, messages, connection_details)
         self.worker.response_ready.connect(lambda result: self.handle_worker_response(result, prompt, chat_display, dialog, prompt_input))
         self.worker.status_message.connect(self.show_status_message)
         self.worker.finished.connect(QApplication.restoreOverrideCursor)
@@ -880,38 +868,46 @@ class TrayChatAIManager:
             # Dialog or widgets likely destroyed
             pass
         
-    def list_ollama_models(self):
-        """Lists available LLM models (Ollama) using OpenAI API."""
-        if not self.docker_available:
-            self.show_status_message("Error", "Docker is not available. Cannot list models.", 5000)
+    def list_models(self):
+        """Lists available LLM models based on the active OpenAI API connection."""
+
+        # Get active connection details
+        active_conn_name = self.active_connection
+        connection_details = self.openai_connections.get(active_conn_name)
+
+        if not connection_details:
+            logging.error(f"Active connection '{active_conn_name}' not found in settings.")
+            self.show_status_message("Error", f"Connection '{active_conn_name}' not found.", 5000)
             return None
+
         try:
-            client = self.docker_client
-            container = client.containers.get(self.docker_image_name)
-            if container.status == "running":
-                # Use OpenAI API to list models
-                ai_client = OpenAI(base_url='http://localhost:11434/v1', api_key='ollama')
-                models_response = ai_client.models.list()
-                return [model.id for model in models_response.data]
-            else:
-                logging.error("LLM server container (Ollama) is not running.")
-                self.show_status_message("Error", "LLM server container is not running. Please start it first.", 5000)
-                return None
-        except docker_errors.NotFound:
-            logging.error(f"LLM server container (Ollama) '{self.docker_image_name}' not found. Cannot list models.") # This error is Ollama-specific
-            self.show_status_message("Error", f"LLM server container '{self.docker_image_name}' not found. Please check the container name.", 5000)
-            return None
-        except docker_errors.APIError as e:
-            logging.error(f"Docker API error when listing models: {e}")
-            self.show_status_message("Docker Error", f"Failed to list models due to Docker API error: {e}", 5000)
-            return None
+            # Special handling for the local 'ollama' connection which depends on Docker
+           
+
+            # Common logic for all connections: try to list models from the endpoint
+            base_url = connection_details.get('base_url')
+            api_key = connection_details.get('api_key')
+
+            ai_client = OpenAI(base_url=base_url, api_key=api_key)
+            models_response = ai_client.models.list()
+
+            models = []
+            for model in models_response.data:
+                model_id = model.id
+                if model_id.startswith("models/"):
+                    model_id = model_id[7:]
+                models.append(model_id)
+            return models
+       
         except Exception as e:
-            logging.error(f"An unexpected error occurred when listing LLM models (Ollama): {e}")
+            # This will catch OpenAI API errors, connection errors, etc.
+            logging.error(f"An unexpected error occurred when listing models from '{active_conn_name}': {e}")
+            self.show_status_message("API Error", f"Could not list models from '{active_conn_name}': {e}", 5000)
             return None
         
     def choose_ollama_model(self):
         # Placeholder for choosing LLM model (Ollama) from available models. This method is Ollama-specific.
-        models = self.list_ollama_models()
+        models = self.list_models()
         if models is not None:
             
             current_index = 0
@@ -1089,10 +1085,63 @@ class TrayChatAIManager:
 
     
 
+    def check_online_connection(self, connection_details):
+        """Checks if a remote OpenAI-compatible API is online."""
+        try:
+            base_url = connection_details.get('base_url')
+            if not base_url:
+                logging.warning("Cannot check online status: base_url is not defined for connection.")
+                return False
+
+            api_key = connection_details.get('api_key')
+            
+            # Use a timeout to prevent long waits
+            ai_client = OpenAI(base_url=base_url, api_key=api_key, timeout=5.0) 
+            ai_client.models.list()
+            return True
+        except Exception as e:
+            # Don't log full trace for expected errors like connection refused
+            logging.warning(f"Connection check failed for {connection_details.get('base_url', 'N/A')}: {type(e).__name__}")
+            return False
+
+
     def update_status(self):
-        """Runs a shell command to check if the LLM server (Ollama) container is running. This method is Ollama-specific."""
+        """Updates the status of the active connection, checking for local Ollama or remote APIs."""
+        # Handle non-Ollama (remote) connections first
+        if self.active_connection != 'ollama':
+            self.start_action.setVisible(False)
+            self.stop_action.setVisible(False)
+            self.management_menu.menuAction().setVisible(False)
+
+            connection_details = self.openai_connections.get(self.active_connection)
+            if not connection_details:
+                self.status_action.setText(f"Error: Conn '{self.active_connection}' not found")
+                self.tray.setIcon(QIcon(os.path.join(self.image_dir, "llm_tray_error.png")))
+                self.send_prompt_action.setEnabled(False)
+                return
+            
+            # Check online status and update UI
+            if self.check_online_connection(connection_details):
+                self.status_action.setText(f"{self.active_connection}: Online 🟢")
+                online_icon_path = os.path.join(self.image_dir, "tray_chat_ai_gpu_running.png") # User will create this icon
+                if os.path.exists(online_icon_path):
+                    self.tray.setIcon(QIcon(online_icon_path))
+                else: # Fallback icon
+                    self.tray.setIcon(QIcon(os.path.join(self.image_dir, "tray_chat_ai_cpu_running.png")))
+                self.send_prompt_action.setEnabled(True)
+            else:
+                self.status_action.setText(f"{self.active_connection}: Offline 🔴")
+                not_running_icon_path = os.path.join(self.image_dir, "tray_chat_ai_not_running.png")
+                self.tray.setIcon(QIcon(not_running_icon_path))
+                self.send_prompt_action.setEnabled(False)
+            return
+        
+        # --- If we are here, active connection is 'ollama' ---
+        # Make sure Ollama-specific menu items are visible
+        self.management_menu.menuAction().setVisible(True)
+        
         if not self.docker_available:
-            self.status_action.setText("LLM Server: Docker Not Available")
+            self.status_action.setText("Ollama: Docker Not Available")
             self.start_action.setEnabled(False)
             self.stop_action.setEnabled(False)
             self.send_prompt_action.setEnabled(False)

@@ -15,7 +15,7 @@ find . -type d -name "__pycache__" -exec rm -rf {} +
 
 echo "3. Generating Debian Source..."
 # We use sdist_dsc to generate the debian/ folder structure without trying to compile yet
-/usr/bin/python3 setup.py --command-packages=stdeb.command sdist_dsc
+python3 setup.py --command-packages=stdeb.command sdist_dsc
 
 echo "4. Building .deb package..."
 # We enter the generated directory and build manually.

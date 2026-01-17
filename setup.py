@@ -3,7 +3,7 @@ from setuptools import setup
 if __name__ == "__main__":
     setup(
         name="tray-chat-ai",
-        version="1.0.1",
+        version="1.0.2",
         description="TrayChat AI - Chat with AI models from the system tray and manage them easily.",
         long_description="A system tray application to manage AI models, providing a simple chat interface.",
         author="Gregor Skrt",
