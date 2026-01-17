@@ -15,15 +15,22 @@ if __name__ == "__main__":
             "markdown",
             "openai"
         ],
-        setup_requires=["setuptools"],
         entry_points={
             "console_scripts": [
                 "tray-chat-ai=tray_chat_ai:main",
             ],
         },
         data_files=[
-            ("share/tray-chat-ai/images", ["images/tray_chat_ai_default.png", "images/tray_chat_ai_cpu_running.png", "images/tray_chat_ai_gpu_running.png",
-                                           "images/tray_chat_ai_not_running.png", "images/tray_chat_ai_window_icon.png", "images/tray_chat_ai_window_icon_simple.png", "images/connection_manager.svg"]),
+            ("share/tray-chat-ai/images", [
+                "images/tray_chat_ai_default.png",
+                "images/tray_chat_ai_cpu_running.png",
+                "images/tray_chat_ai_gpu_running.png",
+                "images/tray_chat_ai_not_running.png",
+                "images/tray_chat_ai_web_running.png",
+                "images/tray_chat_ai_window_icon.png",
+                "images/tray_chat_ai_window_icon_simple.png",
+                "images/connection_manager.svg"
+            ]),
             ("share/pixmaps", ["images/tray_chat_ai_default.png"]),
             ("share/applications", ["tray-chat-ai.desktop"]),
             ("share/doc/tray-chat-ai", ["LICENSE.txt"]),
