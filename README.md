@@ -39,28 +39,26 @@ These statuses were the main reason why I created this app.
 On **right click** you will get menu to access basic functions. Currently there is: 
 
 1. Open chat window with model. 
-2. Start and stop (docker container running Ollama)
-3. Select main chat model (Select LLM model)
-4. Function to pull LLM model for Ollama
-5. Remove LLM model 
-6. Check interval (for working docker image and hardware type used)
-7. Name select for docker image (in case it is different as Ollama)
-8. Add a program to startup programs
-9. Quit
+2. Select active connection 
+3. Manage connections 
+4. Set status check interval (to see if connected)
+5. Add program to statup programs 
+6. Quit 
+
+If Ollama connection is enabled that is running within docker environment, there are functions to manage and install new models from ollama website. 
 
 ![right click menu](readme_images/right_menu_action.png)
 
-### Chat interface
+### Chat Interface
 
-The Chat interface can be invoked by left-clicking the status icon or using the menu option. 
+The chat interface provides a simple yet powerful way to interact with your local AI models or online models.
 
-You can invoke chat window by adding system shortcut calling: 
+You can open the chat window in several ways:
+*   **Left-click** the tray icon.
+*   Select **"Open Chat"** from the right-click menu.
+*   Use a command-line argument, which is perfect for creating a system-wide keyboard shortcut:
 
- ˘˘˘tray-chat-ai --chat˘˘˘
-
-It's a simple interface with a twist: it sends the same prompt to multiple models that can be selected using the dropdown menu. 
-
-This allows you to gather info from multiple AI models running in the background. It features syntax highlighting for code blocks.
+`tray-chat-ai --chat`
 
 ![Chat window](readme_images/chat_window_v1.png)
   
