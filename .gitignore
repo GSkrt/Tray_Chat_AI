@@ -15,4 +15,4 @@ deb_dist/*
 linuxdeploy-x86_64.AppImage
 *.log
 build_appimage.sh
-.continue/agents/new-config.yaml
+.continue
