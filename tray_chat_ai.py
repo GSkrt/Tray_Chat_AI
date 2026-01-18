@@ -15,7 +15,8 @@ from PyQt5.QtWidgets import QApplication,QComboBox, QSystemTrayIcon, QMenu, QFil
         QListWidgetItem, QLabel, QHBoxLayout, QWidget, QAbstractItemView, QLineEdit, QShortcut
 from PyQt5 import QtGui, QtCore
 from PyQt5.QtGui import QIcon
-from PyQt5.QtCore import QTimer, QProcess, QThread, pyqtSignal # Import QProcess
+from PyQt5.QtCore import QTimer, QProcess, QThread, pyqtSignal, QCoreApplication # Import QProcess
+from PyQt5.QtNetwork import QLocalServer, QLocalSocket
 import os
 import logging
 import logging.handlers 
@@ -197,9 +198,19 @@ class TrayChatAIManager:
             self.show_status_message("Docker Error", f"An unexpected error occurred while checking Docker: {e}", 10000)
 
 
-        self.app = QApplication(sys.argv)
+        self.app = QApplication.instance()
         # Prevents the app from closing when there is no main window
         self.app.setQuitOnLastWindowClosed(False)
+
+        # Local server for single instance control
+        self.server = QLocalServer(self.app)
+        self.server.newConnection.connect(self.handle_new_connection)
+        socket_name = "TrayChatAI_socket"
+        # Clean up in case of crash
+        QLocalServer.removeServer(socket_name)
+        if not self.server.listen(socket_name):
+            logging.warning(f"Could not listen on socket {socket_name}. Single instance mode may not work.")
+
 
         # 1. Create the Tray Icon
         self.tray = QSystemTrayIcon()
@@ -1651,12 +1662,52 @@ StartupNotify=false
                 except Exception as e:
                     logging.error(f"Failed to remove autostart file: {e}")
 
+    def handle_new_connection(self):
+        socket = self.server.nextPendingConnection()
+        if socket:
+            socket.readyRead.connect(lambda: self.read_socket_data(socket))
+
+    def read_socket_data(self, socket):
+        data = socket.readAll().data()
+        socket.disconnectFromServer()
+        if data == b'show_chat':
+            QTimer.singleShot(0, self.show_chat_from_socket)
+
+    def show_chat_from_socket(self):
+        if QApplication.activeModalWidget():
+            QApplication.activeModalWidget().activateWindow()
+            self.show_status_message("TrayChat AI", "Chat window is already open.", 5000)
+            return
+
+        if self.send_prompt_action.isEnabled():
+            self.chat_dialog()
+        else:
+            self.show_status_message("TrayChat AI", "Please start the LLM Server first to chat.", 2000)
+
     def run(self):
         sys.exit(self.app.exec())
 
 def main():
+    app = QApplication(sys.argv)
+
+    # Use a local socket to ensure single instance
+    socket = QLocalSocket()
+    socket_name = "TrayChatAI_socket"
+    socket.connectToServer(socket_name)
+
+    # If connected, another instance is running
+    if socket.waitForConnected(500):
+        # If the second instance is called with --chat, send a message to the first instance
+        if "--chat" in sys.argv:
+            socket.writeData(b'show_chat')
+            socket.waitForBytesWritten(500)
+        socket.disconnectFromServer()
+        # Exit the second instance
+        sys.exit(0)
+    
     tray = TrayChatAIManager()
     tray.run()
+
 
 if __name__ == "__main__":
     main()

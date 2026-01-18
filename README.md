@@ -53,7 +53,13 @@ On **right click** you will get menu to access basic functions. Currently there 
 ### Chat interface
 
 The Chat interface can be invoked by left-clicking the status icon or using the menu option. 
+
+You can invoke chat window by adding system shortcut calling: 
+
+ ˘˘˘tray-chat-ai --chat˘˘˘
+
 It's a simple interface with a twist: it sends the same prompt to multiple models that can be selected using the dropdown menu. 
+
 This allows you to gather info from multiple AI models running in the background. It features syntax highlighting for code blocks.
 
 ![Chat window](readme_images/chat_window_v1.png)
